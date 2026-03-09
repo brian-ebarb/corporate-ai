@@ -73,7 +73,7 @@ corporate-ai/
 ### 1. Clone / Download
 
 ```bash
-git clone https://github.com/your-username/corporate-ai.git
+git clone https://github.com/brian-ebarb/corporate-ai.git
 cd corporate-ai
 ```
 
