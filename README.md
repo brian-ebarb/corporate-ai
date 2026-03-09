@@ -6,6 +6,28 @@ A real-time AI operations dashboard that connects to a multi-agent Corporate AI 
 [Browser Dashboard]  ←→  [Relay :3001]  ←→  [Corporate AI :8000]  ←→  [Ollama / LLM]
 ```
 
+## Screenshots
+
+<details>
+<summary>Click to expand</summary>
+
+![Dashboard 1](screenshots/dashboard-1.png)
+![Dashboard 2](screenshots/dashboard-2a.png)
+![Dashboard 3](screenshots/dashboard-2b.png)
+![Dashboard 4](screenshots/dashboard-3.png)
+![Dashboard 5](screenshots/dashboard-4.png)
+![Dashboard 6](screenshots/dashboard-5.png)
+![Dashboard 7](screenshots/dashboard-6.png)
+![Dashboard 8](screenshots/dashboard-7.png)
+![Dashboard 9](screenshots/dashboard-8.png)
+![Dashboard 10](screenshots/dashboard-9.png)
+![Dashboard 11](screenshots/dashboard-10.png)
+![Dashboard 12](screenshots/dashboard-11.png)
+
+</details>
+
+---
+
 ## Architecture
 
 | Component | Directory | Port | Purpose |
