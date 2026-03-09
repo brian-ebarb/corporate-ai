@@ -1,0 +1,112 @@
+[
+  {
+    "category": "ai-news",
+    "importance": "hot",
+    "title": "GPT-5.3 Instant Released with Web Search",
+    "summary": "OpenAI released GPT-5.3 Instant with improved conversational flow and native web-search integration. This gives us better tooling for customer-facing automation and support chatbots with real-time information access.",
+    "source": "https://openai.com/blog/gpt-5-3-instant",
+    "sourceLabel": "OpenAI Blog",
+    "date": "2026-03-04",
+    "addedBy": "rita",
+    "id": "intel-1772851024258-z0n1"
+  },
+  {
+    "category": "ai-news",
+    "importance": "notable",
+    "title": "Claude 4.0 Opus Adds 500K Context Window",
+    "summary": "Anthropic updated Claude 4.0 Opus with improved coding capabilities and extended context window to 500K tokens. Worth evaluating for code generation tasks in our Wasteland Legacy development pipeline.",
+    "source": "https://www.anthropic.com/news/claude-4",
+    "sourceLabel": "Anthropic",
+    "date": "2026-03-03",
+    "addedBy": "rita",
+    "id": "intel-1772851024258-3m64"
+  },
+  {
+    "category": "trends",
+    "importance": "hot",
+    "title": "Shipping Costs Surge as VLCC Rates Hit $423K/Day",
+    "summary": "Geopolitical tensions have driven VLCC (Very Large Crude Carrier) rates to $423K per day, the highest since 2020. This will likely cascade into higher international shipping costs for our 3D printing supplies within 2-4 weeks.",
+    "source": "https://www.freightwaves.com/news/vlcc-rates-surge",
+    "sourceLabel": "Freightwaves",
+    "date": "2026-03-04",
+    "addedBy": "rita",
+    "id": "intel-1772851024258-idg6"
+  },
+  {
+    "category": "trends",
+    "importance": "hot",
+    "title": "15% Tariff May Hit This Week on Asian Imports",
+    "summary": "New 15% tariff on Chinese, Canadian, and Mexican imports expected to take effect this week. Direct cost impact on 3D printing components and filaments sourced from these regions. Stock critical inventory immediately.",
+    "source": "https://ustr.gov/issue-areas/enforcement",
+    "sourceLabel": "US Trade Representative",
+    "date": "2026-03-04",
+    "addedBy": "rita",
+    "id": "intel-1772851024258-5oej"
+  },
+  {
+    "category": "trends",
+    "importance": "hot",
+    "title": "HP High-Temp Filament Webinar March 31",
+    "summary": "AM Research hosting webinar on HP's new production-grade high-temperature 3D printing filaments. Production-grade materials entering market could differentiate our product line from commodity competitors.",
+    "source": "https://amresearch.com/webinars/hp-filament-march-2026",
+    "sourceLabel": "AM Research",
+    "date": "2026-03-05",
+    "addedBy": "rita",
+    "id": "intel-1772851024258-9525"
+  },
+  {
+    "category": "trends",
+    "importance": "notable",
+    "title": "eBay Promoted Listings Fee Structure Changes",
+    "summary": "eBay adjusting fee rates for promoted listings in Electronics and Industrial categories effective March 10. Changes affect our primary product categories; need to recalculate ad ROI.",
+    "source": "https://community.ebay.com/seller-news",
+    "sourceLabel": "eBay Community",
+    "date": "2026-03-03",
+    "addedBy": "rita",
+    "id": "intel-1772851024258-uysc"
+  },
+  {
+    "category": "competitor",
+    "importance": "hot",
+    "title": "YourOnline3DPrinterStore: 22K Sales, 98.9% Feedback",
+    "summary": "Top eBay competitor now showing 22K+ items sold with 98.9% positive feedback rating. Aggressive pricing on PETG and PLA filaments. Benchmark their listing strategy and differentiate on value-adds.",
+    "source": "https://www.ebay.com/usr/youronline3dprinterstore",
+    "sourceLabel": "eBay Seller Page",
+    "date": "2026-03-04",
+    "addedBy": "rita",
+    "id": "intel-1772851024258-qt5y"
+  },
+  {
+    "category": "competitor",
+    "importance": "notable",
+    "title": "FilamentWorks Adds Price Matching Policy",
+    "summary": "Top-10 eBay seller FilamentWorks now offering price matching on PETG and PLA+ products. Indication of margin pressure in filament market. Consider bundle strategies vs direct price competition.",
+    "source": "https://www.ebay.com/str/filamentworks",
+    "sourceLabel": "eBay Store",
+    "date": "2026-03-02",
+    "addedBy": "rita",
+    "id": "intel-1772851024258-n545"
+  },
+  {
+    "category": "opportunity",
+    "importance": "notable",
+    "title": "Walmart B-Stock Portal Opens 3D Printing Category",
+    "summary": "Walmart's B-Stock liquidation portal now includes 3D printing equipment category. Bulk inventory available at 30-50% below retail. Potential high-margin sourcing channel for resale.",
+    "source": "https://bstock.com/walmart/",
+    "sourceLabel": "B-Stock Solutions",
+    "date": "2026-03-01",
+    "addedBy": "rita",
+    "id": "intel-1772851024258-zq0j"
+  },
+  {
+    "category": "opportunity",
+    "importance": "reference",
+    "title": "Dallas Makerspace Seeks Bulk Filament Partner",
+    "summary": "Dallas-area makerspace posted request for bulk filament supplier partnership. Low immediate volume but potential B2B channel. Evaluate margin requirements vs direct-to-consumer.",
+    "source": "https://dallasmakerspace.org/forum",
+    "sourceLabel": "Dallas Makerspace Forum",
+    "date": "2026-02-28",
+    "addedBy": "rita",
+    "id": "intel-1772851024258-wcc7"
+  }
+]

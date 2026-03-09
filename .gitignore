@@ -29,6 +29,9 @@ workspace/
 .env
 *.env.local
 
+# Claude Code auto-memory
+.memory/
+
 # OS
 .DS_Store
 Thumbs.db

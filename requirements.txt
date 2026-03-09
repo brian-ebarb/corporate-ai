@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+litellm
+chromadb
+pyyaml
+gitpython
+requests
+websockets
+httpx

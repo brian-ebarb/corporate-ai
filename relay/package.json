@@ -1,0 +1,14 @@
+{
+  "name": "corporate-ai-dashboard-relay",
+  "version": "2026.3.8",
+  "description": "Relay server bridging dashboard to Corporate AI WebSocket",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "ws": "^8.19.0"
+  }
+}

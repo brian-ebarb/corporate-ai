@@ -1,0 +1,50 @@
+supervisor:
+  provider: ollama
+  model: kimi-k2.5:cloud
+  context_length: 256000      # max tokens for this model's context window
+  compaction_threshold: 0.5 # compact conversation history at 75% full
+
+executives:
+  engineering:
+    provider: ollama
+    model: qwen3-coder-next:cloud
+    context_length: 256000
+    compaction_threshold: 0.5
+  marketing:
+    provider: ollama
+    model: deepseek-v3.2:cloud
+    context_length: 160000
+    compaction_threshold: 0.75
+  research:
+    provider: ollama
+    model: glm-5:cloud
+    context_length: 198000
+    compaction_threshold: 0.75
+
+workers:
+  coder:
+    provider: ollama
+    model: qwen2.5-coder:14b
+    context_length: 32000
+    compaction_threshold: 0.80
+  qa:
+    provider: ollama
+    model: qwen2.5-coder:14b
+    context_length: 32000
+    compaction_threshold: 0.80
+  research:
+    provider: ollama
+    model: gpt-oss:latest
+    context_length: 128000
+    compaction_threshold: 0.80
+  docs:
+    provider: ollama
+    model: gpt-oss:latest
+    context_length: 128000
+    compaction_threshold: 0.80
+
+api_keys:
+  anthropic: ""
+  openai: ""
+  openrouter: ""
+  ollama_base_url: "http://localhost:11434"

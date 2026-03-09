@@ -1,0 +1,14 @@
+from workers.worker_base import WorkerBase
+from tools.web_search_tool import WebSearchTool
+from tools.filesystem_tool import FilesystemTool
+
+
+class ResearchWorker(WorkerBase):
+    prompt_name = "WORKER_RESEARCH"
+
+    def __init__(self, model: str, event_bus=None, context_length: int = 8192, compaction_threshold: float = 0.80):
+        super().__init__(model, event_bus, context_length, compaction_threshold)
+        ws = WebSearchTool()
+        fs = FilesystemTool()
+        self.tools = [ws, fs]
+        self.tool_schemas = ws.schemas + fs.schemas

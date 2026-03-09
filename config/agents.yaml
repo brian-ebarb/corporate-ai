@@ -1,0 +1,34 @@
+user:
+  name: User              # Your name — shown in the dashboard greeting
+
+supervisor:
+  name: Bob Sello
+  role: COO
+
+executives:
+  - name: Paul Pythonwriter
+    role: CTO
+    department: engineering
+
+  - name: Michael Marketmaker
+    role: CMO
+    department: marketing
+
+  - name: Rita Researcher
+    role: CDO
+    department: research
+
+workers:
+  - coder_worker
+  - qa_worker
+  - research_worker
+  - docs_worker
+
+# Heartbeat keeps the system alive and optionally prompts the supervisor
+# on a regular interval so it can self-monitor or run scheduled work.
+heartbeat:
+  enabled: true
+  interval_seconds: 900        # how often to fire (seconds)
+  mode: event                 # "event" = silent pulse on the logs channel
+                              # "prompt" = trigger supervisor with the prompt below
+  prompt: "Heartbeat check-in. Review any pending work, log your current status, and flag anything that needs attention."
