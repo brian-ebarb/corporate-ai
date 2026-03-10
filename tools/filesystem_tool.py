@@ -13,6 +13,10 @@ class FilesystemTool:
     ]
 
     def _safe_path(self, rel: str) -> Path:
+        # Strip any "workspace/" prefix — all paths are already relative to WORKSPACE
+        rel = rel.replace("\\", "/")
+        if rel.startswith("workspace/"):
+            rel = rel[len("workspace/"):]
         p = (WORKSPACE / rel).resolve()
         if not str(p).startswith(str(WORKSPACE.resolve())):
             raise ValueError("Path escapes workspace")

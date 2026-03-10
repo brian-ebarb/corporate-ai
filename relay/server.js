@@ -290,6 +290,16 @@ app.post('/api/session/reset', async (req, res) => {
   }
 });
 
+/* POST /api/memory/reset — proxy to CA */
+app.post('/api/memory/reset', async (req, res) => {
+  try {
+    const r = await fetch(`${CA_HTTP_URL}/memory/reset`, { method: 'POST', signal: AbortSignal.timeout(10000) });
+    res.json(await r.json());
+  } catch (e) {
+    res.status(503).json({ ok: false, error: e.message });
+  }
+});
+
 /* GET /api/config — proxy to CA */
 app.get('/api/config', async (req, res) => {
   try {

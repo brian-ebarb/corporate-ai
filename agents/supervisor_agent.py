@@ -41,7 +41,7 @@ class SupervisorAgent:
         self._executives = executives
 
         # Load context files once at startup — editable without restarting
-        self._context = load_prompt("COMPANY", "SUPERVISOR")
+        self._context = load_prompt("COMPANY", "USER", "SUPERVISOR")
 
         # Memory & context management
         self._ctx_mgr = ContextManager(model, context_length, compaction_threshold)
@@ -260,12 +260,62 @@ class SupervisorAgent:
             _conv_store.append(session_id, "assistant", reply)
             await asyncio.to_thread(self._daily_mem.log, message, "Slash command: /status", reply)
             await self._bus.publish("executive", "message_posted", self.name,
-                                    {"message": reply[:500]}, role="supervisor")
+                                    {"message": reply}, role="supervisor")
             await self._bus.publish("executive", "agent_finished", self.name,
-                                    {"result": reply[:200]}, role="supervisor")
+                                    {"result": reply[:400]}, role="supervisor")
+            return reply
+
+        if cmd == "/reset-memory":
+            reply = await self._reset_memory(session_id)
+            await self._bus.publish("executive", "message_posted", self.name,
+                                    {"message": reply}, role="supervisor")
+            await self._bus.publish("executive", "agent_finished", self.name,
+                                    {"result": reply[:400]}, role="supervisor")
             return reply
 
         return None
+
+    async def _reset_memory(self, session_id: str) -> str:
+        import shutil
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cleared = []
+        errors = []
+
+        # Short-term: clear all sessions
+        try:
+            _conv_store._sessions.clear()
+            _conv_store._save()
+            cleared.append("conversations")
+        except Exception as e:
+            errors.append(f"conversations: {e}")
+
+        # Mid-term: delete daily logs
+        try:
+            daily_dir = os.path.join(root, "memory", "daily")
+            if os.path.isdir(daily_dir):
+                for f in os.listdir(daily_dir):
+                    if f.endswith(".md"):
+                        os.unlink(os.path.join(daily_dir, f))
+            cleared.append("daily logs")
+        except Exception as e:
+            errors.append(f"daily logs: {e}")
+
+        # Long-term: wipe ChromaDB and reset ALL collection references in process
+        try:
+            memory_dir = os.path.join(root, ".memory")
+            if os.path.isdir(memory_dir):
+                shutil.rmtree(memory_dir)
+            from memory.vector_memory import VectorMemory
+            n = VectorMemory.reset_all()   # invalidates supervisor + all executives
+            cleared.append(f"vector memory ({n} agents)")
+        except Exception as e:
+            errors.append(f"vector memory: {e}")
+
+        if errors:
+            reply = f"Memory reset partially complete.\nCleared: {', '.join(cleared)}\nErrors: {', '.join(errors)}"
+        else:
+            reply = f"All memory cleared: {', '.join(cleared)}.\nConversation history, daily logs, and vector memory have been wiped. Starting fresh."
+        return reply
 
     # ── System prompt ──────────────────────────────────────────────────────
 
@@ -372,9 +422,9 @@ No markdown, no explanation, just the JSON."""
             )
             await asyncio.to_thread(self._daily_mem.log, message, "Direct reply", reply_text)
             await self._bus.publish("executive", "message_posted", self.name,
-                                    {"message": reply_text[:500]}, role="supervisor")
+                                    {"message": reply_text}, role="supervisor")
             await self._bus.publish("executive", "agent_finished", self.name,
-                                    {"result": reply_text[:200]}, role="supervisor")
+                                    {"result": reply_text[:400]}, role="supervisor")
             return reply_text
 
         # ── Route to chosen executive ─────────────────────────────────────
@@ -394,13 +444,38 @@ No markdown, no explanation, just the JSON."""
 
         exec_result = ""
         if chosen:
-            exec_result = await chosen.handle(decision.get("delegated_task", message))
+            delegated = decision.get("delegated_task") or message
+            # Safety net: if Bob summarised the task, re-attach the full original message
+            # so the executive always has complete requirements.
+            if len(message) > len(delegated) + 50:
+                delegated = delegated + f"\n\n---\n\n**Full original request (use this for complete requirements):**\n{message}"
+
+            # Write delegation state BEFORE awaiting — so heartbeats fired during
+            # execution can see that work is in progress.
+            delegation_note = (
+                f"TASK IN PROGRESS — delegated to {chosen.name} ({chosen.role}, {chosen.department}).\n"
+                f"User request: {message[:300]}\n"
+                f"Status: waiting for executive to complete. Do NOT report 'no tasks in progress'."
+            )
+            await asyncio.to_thread(
+                self._daily_mem.log,
+                message,
+                f"Delegating to {chosen.name} ({chosen.department}) — AWAITING RESULT",
+                delegation_note,
+            )
+            await self._vector_mem.store(
+                delegation_note,
+                {"session": session_id, "type": "delegation_in_progress",
+                 "department": chosen.department},
+            )
+
+            exec_result = await chosen.handle(delegated)
 
         # ── Synthesis — final response to user ────────────────────────────
         synth_system = (
             f"{self._context}\n\n"
             f"You have just received a completed executive report. "
-            f"Write the final response to the user. "
+            f"Write the final response to the user as PLAIN TEXT — no JSON, no braces, no markdown code fences. "
             f"Be direct, professional, and concise. Lead with the result.\n"
             f"Executive who handled it: "
             f"{chosen.name if chosen else 'unknown'} "
@@ -427,6 +502,16 @@ No markdown, no explanation, just the JSON."""
             )
             self._record_usage(final_resp, "synthesis")
             final_text = final_resp.choices[0].message.content.strip()
+            # Strip JSON wrapper if model returned {"reply": "..."} despite plain-text instruction
+            if final_text.startswith("{"):
+                try:
+                    start = final_text.find("{")
+                    end   = final_text.rfind("}") + 1
+                    parsed = json.loads(final_text[start:end])
+                    if "reply" in parsed:
+                        final_text = parsed["reply"]
+                except Exception:
+                    pass
         except Exception as e:
             logger.error(f"[Supervisor] Synthesis LLM error: {e}")
             final_text = exec_result or f"Task completed. (synthesis error: {e})"
@@ -449,7 +534,7 @@ No markdown, no explanation, just the JSON."""
         )
 
         await self._bus.publish("executive", "message_posted", self.name,
-                                {"message": final_text[:500]}, role="supervisor")
+                                {"message": final_text}, role="supervisor")
         await self._bus.publish("executive", "agent_finished", self.name,
-                                {"result": final_text[:200]}, role="supervisor")
+                                {"result": final_text[:400]}, role="supervisor")
         return final_text

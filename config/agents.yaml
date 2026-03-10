@@ -29,6 +29,6 @@ workers:
 heartbeat:
   enabled: true
   interval_seconds: 900        # how often to fire (seconds)
-  mode: event                 # "event" = silent pulse on the logs channel
+  mode: prompt                # "event" = silent pulse on the logs channel
                               # "prompt" = trigger supervisor with the prompt below
-  prompt: "Heartbeat check-in. Review any pending work, log your current status, and flag anything that needs attention."
+  prompt: "[HEARTBEAT] Automated check-in. Review your memory and today's activity log. Reply with a brief status: what was accomplished recently, anything in-progress, and any follow-ups needed. Do not delegate — reply directly."

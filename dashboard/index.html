@@ -3433,6 +3433,13 @@ table.client-table {
   <!-- ======================== TIMELINE TAB ======================== -->
   <section class="tab-panel" id="tab-timeline">
     <div class="timeline-wrap">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;padding:0 0.5rem">
+        <h2 style="font-size:1.05rem;font-weight:700;letter-spacing:-.03em;color:var(--text-primary)">Roadmap</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="tlAddPhaseBtn" onclick="tlAddPhase()" style="display:none;font-size:.68rem;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--blue-bright);cursor:pointer">+ Add Phase</button>
+          <button id="tlEditBtn" onclick="tlToggleEdit()" style="font-size:.68rem;padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--text-secondary);cursor:pointer;transition:all .2s">Edit</button>
+        </div>
+      </div>
       <div class="timeline-track" id="timelineTrack"></div>
     </div>
   </section>
@@ -4213,8 +4220,10 @@ table.client-table {
           <button id="opsChatSend" onclick="opsSendChat()">Send</button>
         </div>
       </div>
-      <!-- Right: Presence + Health -->
+      <!-- Right: Active Now + Status + Channels -->
       <div class="ops-right">
+        <div class="ops-phdr" style="color:var(--green)">Active Now</div>
+        <div class="ops-body" id="opsActiveNow" style="min-height:80px;max-height:140px;overflow-y:auto"><div class="ops-empty">—</div></div>
         <div class="ops-phdr">CA Status</div>
         <div class="ops-body" id="opsHealth"><div class="ops-empty">—</div></div>
         <div class="ops-phdr" style="margin-top:auto">Channels <span class="cnt" id="opsPresC">0</span></div>
@@ -5058,7 +5067,7 @@ document.addEventListener('keydown', e => {
    TIMELINE CONFIG
    Edit this object to customize your roadmap
    ============================================================ */
-const TIMELINE_DATA = [
+let TIMELINE_DATA = [
   {
     title: 'Q1 — Foundation',
     dateRange: 'Jan 1 – Mar 31',
@@ -5109,8 +5118,120 @@ const TIMELINE_DATA = [
   },
 ];
 
+/* ── Timeline localStorage persistence ── */
+(function() {
+  const saved = localStorage.getItem('ca_timeline');
+  if (saved) { try { TIMELINE_DATA = JSON.parse(saved); } catch(e) {} }
+})();
+
+let tlEditMode = false;
+
+function tlToggleEdit() {
+  if (tlEditMode) {
+    tlSaveFromDom();
+    localStorage.setItem('ca_timeline', JSON.stringify(TIMELINE_DATA));
+    tlEditMode = false;
+    const btn = document.getElementById('tlEditBtn');
+    if (btn) { btn.textContent = 'Edit'; btn.style.color = 'var(--text-secondary)'; btn.style.borderColor = 'var(--border)'; }
+    const ab = document.getElementById('tlAddPhaseBtn'); if (ab) ab.style.display = 'none';
+  } else {
+    tlEditMode = true;
+    const btn = document.getElementById('tlEditBtn');
+    if (btn) { btn.textContent = 'Save'; btn.style.color = 'var(--green)'; btn.style.borderColor = 'rgba(34,197,94,.4)'; }
+    const ab = document.getElementById('tlAddPhaseBtn'); if (ab) ab.style.display = '';
+  }
+  renderTimeline();
+}
+
+function tlSaveFromDom() {
+  document.querySelectorAll('[data-tlp]').forEach(el => {
+    const pi = parseInt(el.dataset.tlp);
+    const field = el.dataset.tlf;
+    const mi = el.dataset.tlm !== undefined ? parseInt(el.dataset.tlm) : null;
+    if (!TIMELINE_DATA[pi]) return;
+    if (mi !== null && TIMELINE_DATA[pi].milestones[mi]) {
+      if (field === 'done') TIMELINE_DATA[pi].milestones[mi].done = el.checked;
+      else TIMELINE_DATA[pi].milestones[mi][field] = el.value;
+    } else if (mi === null) {
+      TIMELINE_DATA[pi][field] = el.value;
+    }
+  });
+}
+
+function tlAddPhase() {
+  tlSaveFromDom();
+  TIMELINE_DATA.push({ title: 'New Phase', dateRange: '', status: 'upcoming', description: '', milestones: [] });
+  renderTimeline();
+}
+function tlRemovePhase(pi) {
+  tlSaveFromDom();
+  TIMELINE_DATA.splice(pi, 1);
+  renderTimeline();
+}
+function tlAddMilestone(pi) {
+  tlSaveFromDom();
+  TIMELINE_DATA[pi].milestones.push({ label: 'New milestone', done: false });
+  renderTimeline();
+}
+function tlRemoveMilestone(pi, mi) {
+  tlSaveFromDom();
+  TIMELINE_DATA[pi].milestones.splice(mi, 1);
+  renderTimeline();
+}
+
+const TL_EDIT_INPUT = 'background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.12);color:var(--text-primary);width:100%;font-family:inherit;outline:none;padding:1px 2px;font-size:inherit;';
+const TL_EDIT_AREA  = TL_EDIT_INPUT + 'resize:vertical;min-height:40px;border:1px solid rgba(255,255,255,.08);border-radius:4px;padding:4px 6px;font-size:.82rem;';
+
 function renderTimeline() {
   const track = document.getElementById('timelineTrack');
+  if (!track) return;
+
+  if (tlEditMode) {
+    track.innerHTML = TIMELINE_DATA.map((phase, pi) => `
+      <div class="timeline-phase ${phase.status}" style="animation-delay:${pi * 0.08}s">
+        <div class="timeline-dot"></div>
+        <div class="card timeline-card" style="border-color:rgba(255,255,255,.1)">
+          <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:.5rem">
+            <input data-tlp="${pi}" data-tlf="title" value="${escHtml(phase.title)}"
+              placeholder="Phase title" style="${TL_EDIT_INPUT}font-weight:700;font-size:.95rem;flex:1" />
+            <select data-tlp="${pi}" data-tlf="status"
+              style="background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;padding:2px 4px;font-size:.65rem;cursor:pointer"
+              onchange="TIMELINE_DATA[${pi}].status=this.value;renderTimeline()">
+              <option value="done"     ${phase.status==='done'    ?'selected':''}>✓ Done</option>
+              <option value="current"  ${phase.status==='current' ?'selected':''}>⚡ Active</option>
+              <option value="upcoming" ${phase.status==='upcoming'?'selected':''}>○ Upcoming</option>
+            </select>
+            <button onclick="tlRemovePhase(${pi})"
+              style="background:none;border:1px solid rgba(239,68,68,.3);color:var(--red);border-radius:4px;padding:2px 6px;cursor:pointer;font-size:.6rem;flex-shrink:0">✕</button>
+          </div>
+          <input data-tlp="${pi}" data-tlf="dateRange" value="${escHtml(phase.dateRange)}"
+            placeholder="Date range e.g. Jan 1 – Mar 31"
+            style="${TL_EDIT_INPUT}font-size:.75rem;color:var(--text-muted);margin-bottom:.5rem" />
+          <textarea data-tlp="${pi}" data-tlf="description"
+            placeholder="Phase description…" rows="2"
+            style="${TL_EDIT_AREA}margin-bottom:.75rem;color:var(--text-secondary)">${escHtml(phase.description)}</textarea>
+          <div style="font-size:.7rem;font-weight:600;color:var(--text-muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.06em">Milestones</div>
+          ${phase.milestones.map((m, mi) => `
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:.3rem">
+              <input type="checkbox" data-tlp="${pi}" data-tlm="${mi}" data-tlf="done" ${m.done?'checked':''}
+                onchange="TIMELINE_DATA[${pi}].milestones[${mi}].done=this.checked"
+                style="width:14px;height:14px;accent-color:var(--green);cursor:pointer;flex-shrink:0" />
+              <input data-tlp="${pi}" data-tlm="${mi}" data-tlf="label" value="${escHtml(m.label)}"
+                placeholder="Milestone…"
+                style="${TL_EDIT_INPUT}font-size:.8rem;${m.done?'text-decoration:line-through;opacity:.5':''}" />
+              <button onclick="tlRemoveMilestone(${pi}, ${mi})"
+                style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:.65rem;flex-shrink:0;padding:0 2px">✕</button>
+            </div>
+          `).join('')}
+          <button onclick="tlAddMilestone(${pi})"
+            style="margin-top:.25rem;background:none;border:1px dashed rgba(255,255,255,.12);color:var(--text-muted);border-radius:4px;padding:3px 8px;cursor:pointer;font-size:.65rem;width:100%">+ Add Milestone</button>
+        </div>
+      </div>
+    `).join('');
+    return;
+  }
+
+  /* ── Read-only rendering ── */
   track.innerHTML = TIMELINE_DATA.map((phase, i) => `
     <div class="timeline-phase ${phase.status}" style="animation-delay:${i * 0.1}s">
       <div class="timeline-dot"></div>
@@ -5119,7 +5240,7 @@ function renderTimeline() {
           <div class="timeline-phase-title">${escHtml(phase.title)}</div>
           <span class="timeline-badge ${phase.status}">${
             phase.status === 'current' ? '⚡ Active' :
-            phase.status === 'done' ? '✓ Complete' : '○ Upcoming'
+            phase.status === 'done'    ? '✓ Complete' : '○ Upcoming'
           }</span>
         </div>
         <div class="timeline-dates">📅 ${escHtml(phase.dateRange)}</div>
@@ -7998,6 +8119,8 @@ const OPS = {
   ws: null, wsOk: false, gwOk: false, agents: [],
   health: null, events: [], chatHist: {}, streaming: false,
   activeChannel: null, activeAgent: null,
+  activity: null,  // { agent, step, since } — currently running op
+  tasks: [],       // authoritative task list from /api/tasks polling
 };
 let opsStarted = false, opsRct = null;
 
@@ -8008,7 +8131,10 @@ function opsInit() {
   opsConnectWs();
   opsFetchAgents();
   opsFetchStatus();
+  opsFetchTasks();
   setInterval(opsFetchStatus, 12000);
+  setInterval(opsFetchTasks, 3000);
+  setInterval(() => { if (OPS.activity) opsRenderActiveNow(); }, 1000); // keep elapsed timer ticking
 }
 
 /* ── Relay WebSocket (real-time events from gateway) ── */
@@ -8046,9 +8172,54 @@ function opsUpdateCaStatus(d) {
   opsRenderHealth();
 }
 
+function opsTrackActivity(evt) {
+  const t = evt.type || '';
+  // agent_started: a new worker step began
+  if (t === 'agent_started') {
+    OPS.activity = {
+      agent: evt.agent || '?',
+      step: evt.payload?.task || evt.payload?.message || '',
+      // keep original start time across steps, unless prior data was from polling
+      since: (OPS.activity && !OPS.activity.fromPoll) ? OPS.activity.since : Date.now(),
+      channel: evt.channel || '',
+    };
+  } else if (t === 'agent_thinking') {
+    if (!OPS.activity || OPS.activity.fromPoll) {
+      OPS.activity = { agent: evt.agent || '?', step: '', since: Date.now(), channel: evt.channel || '' };
+    }
+    OPS.activity.agent = evt.agent || OPS.activity.agent;
+    OPS.activity.step  = evt.payload?.thinking || OPS.activity.step;
+  } else if (t === 'agent_finished') {
+    // Only clear when the SUPERVISOR finishes (final reply to user).
+    // Worker and executive intermediate completions must NOT clear the display
+    // because the executive will immediately dispatch another step.
+    if (evt.role === 'supervisor') OPS.activity = null;
+  }
+  opsRenderActiveNow();
+}
+
+function opsRenderActiveNow() {
+  const el = document.getElementById('opsActiveNow');
+  if (!el) return;
+  if (!OPS.activity) { el.innerHTML = '<div class="ops-empty">—</div>'; return; }
+  const elapsed = Math.round((Date.now() - OPS.activity.since) / 1000);
+  const eStr = elapsed < 60 ? elapsed + 's' : Math.floor(elapsed / 60) + 'm ' + (elapsed % 60) + 's';
+  el.innerHTML = '<div style="padding:6px 8px">'
+    + '<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">'
+    + '<div style="width:6px;height:6px;border-radius:50%;background:var(--green);animation:opsBk .8s infinite;flex-shrink:0"></div>'
+    + '<span style="font-size:.72rem;font-weight:700;color:var(--green)">' + opsH(OPS.activity.agent) + '</span>'
+    + '<span style="font-size:.58rem;color:var(--text-hint);margin-left:auto">' + eStr + '</span>'
+    + '</div>'
+    + (OPS.activity.channel ? '<div style="font-size:.6rem;color:var(--text-hint);margin-bottom:3px">#' + opsH(OPS.activity.channel) + '</div>' : '')
+    + '<div style="font-size:.65rem;color:var(--text-secondary);word-break:break-word;white-space:pre-wrap">'
+    + opsH((OPS.activity.step || '').slice(0, 600))
+    + '</div></div>';
+}
+
 function opsAddEvent(evt) {
   OPS.events.push(evt);
   if (OPS.events.length > 500) OPS.events.shift();
+  opsTrackActivity(evt);
   opsRenderLog();
   // Refresh channel view if one is active
   if (OPS.activeChannel) opsRenderChannelView(OPS.activeChannel);
@@ -8111,6 +8282,36 @@ function opsFetchStatus() {
     if (d.eventCount != null) opsQ('opsEvtCount').textContent = d.eventCount + ' events';
     opsRenderHealth();
     OPS.health = d;
+  }).catch(() => {});
+}
+
+/* ── Poll /api/tasks every 3s — authoritative task state ── */
+function opsFetchTasks() {
+  fetch(OPS_API + '/api/tasks').then(r => r.json()).then(tasks => {
+    if (!Array.isArray(tasks)) return;
+    OPS.tasks = tasks;
+    opsRenderSessions();
+
+    // If there's a running task and Active Now is blank (missed the event),
+    // synthesise activity from the task data so the panel isn't empty.
+    const running = tasks.filter(t => t.status === 'running' || t.status === 'queued');
+    if (running.length > 0 && !OPS.activity) {
+      const t = running[0];
+      OPS.activity = {
+        agent:   t.assigned_to || t.worker_type || '?',
+        step:    t.title || t.description?.slice(0, 200) || '',
+        since:   Date.now(),
+        channel: t.channel || '',
+        fromPoll: true,   // flag so event-based updates can overwrite freely
+      };
+      opsRenderActiveNow();
+    }
+
+    // If no tasks are running and our activity came only from polling, clear it
+    if (running.length === 0 && OPS.activity?.fromPoll) {
+      OPS.activity = null;
+      opsRenderActiveNow();
+    }
   }).catch(() => {});
 }
 
@@ -8249,34 +8450,25 @@ function opsShowAgentActivity(agent) {
   opsQ('opsAgentView').style.display = 'flex';
 }
 
-/* ── Render: Task Queue panel ── */
+/* ── Render: Task Queue panel (driven by /api/tasks polling) ── */
 function opsRenderSessions() {
   const el = opsQ('opsSesL');
-  // Pull tasks from live event buffer
-  const taskMap = {};
-  for (const e of OPS.events) {
-    if (e.type === 'task_created' || e.type === 'task_started' || e.type === 'task_completed') {
-      const tid = e.payload?.task_id;
-      if (tid) {
-        if (!taskMap[tid]) taskMap[tid] = { id: tid, title: e.payload.title || tid, status: e.type, assigned_to: e.agent };
-        else { taskMap[tid].status = e.type; }
-      }
-    }
-  }
-  const tasks = Object.values(taskMap);
+  const tasks = OPS.tasks;
   opsQ('opsSesC').textContent = tasks.length;
   if (!tasks.length) { el.innerHTML = '<div class="ops-empty">'+(OPS.gwOk?'No tasks yet':'—')+'</div>'; return; }
-  const statusColors = { task_created: '#94a3b8', task_started: '#f59e0b', task_completed: '#22c55e' };
+  const statusColor = { running: '#f59e0b', queued: '#94a3b8', completed: '#22c55e', failed: '#ef4444' };
+  // Show most recent 20, newest first
   el.innerHTML = tasks.slice(-20).reverse().map(t => {
-    const sColor = statusColors[t.status] || '#94a3b8';
-    const sLabel = t.status === 'task_created' ? 'queued' : t.status === 'task_started' ? 'running' : 'done';
+    const s = t.status || 'queued';
+    const sColor = statusColor[s] || '#94a3b8';
+    const pulse = s === 'running' ? ';animation:opsBk .8s infinite' : '';
     return '<div class="ops-ac">'
       + '<div style="display:flex;align-items:center;gap:4px;margin-bottom:1px">'
-      + '<span style="width:6px;height:6px;border-radius:50%;background:'+sColor+';flex-shrink:0"></span>'
-      + '<span style="font-size:.6rem;color:'+sColor+'">'+sLabel+'</span>'
+      + '<span style="width:6px;height:6px;border-radius:50%;background:'+sColor+pulse+';flex-shrink:0"></span>'
+      + '<span style="font-size:.6rem;color:'+sColor+'">'+opsH(s)+'</span>'
       + '</div>'
-      + '<div style="font-size:.68rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+opsH(t.title)+'</div>'
-      + '<div style="font-size:.58rem;color:var(--text-muted)">'+opsH(t.assigned_to||'')+'</div>'
+      + '<div style="font-size:.68rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+opsH(t.title||t.id)+'</div>'
+      + '<div style="font-size:.58rem;color:var(--text-muted)">'+opsH(t.assigned_to||t.worker_type||'')+'</div>'
       + '</div>';
   }).join('');
 }
@@ -8287,14 +8479,14 @@ function opsRenderHealth() {
   if (!OPS.gwOk) { el.innerHTML = '<div class="ops-empty">Corporate AI not connected</div>'; return; }
   const agentCount  = OPS.agents.length;
   const eventCount  = OPS.events.length;
-  const tasksDone   = OPS.events.filter(e => e.type === 'task_completed').length;
-  const tasksActive = OPS.events.filter(e => e.type === 'task_started').length
-                    - tasksActive;
+  const tasksDone   = OPS.tasks.filter(t => t.status === 'completed').length;
+  const tasksActive = OPS.tasks.filter(t => t.status === 'running' || t.status === 'queued').length;
   const rows = [
-    { k: 'status',   v: 'connected' },
-    { k: 'agents',   v: String(agentCount) },
-    { k: 'events',   v: String(eventCount) },
-    { k: 'tasks done', v: String(tasksDone) },
+    { k: 'status',       v: 'connected' },
+    { k: 'agents',       v: String(agentCount) },
+    { k: 'events',       v: String(eventCount) },
+    { k: 'tasks active', v: String(tasksActive) },
+    { k: 'tasks done',   v: String(tasksDone) },
   ];
   el.innerHTML = rows.map(r =>
     '<div style="padding:2px 4px;font-size:.62rem;display:flex;gap:6px">'
@@ -8377,6 +8569,9 @@ function opsSendChat() {
   if (OPS.streaming) return;
   const msg = opsQ('opsChatMsg').value.trim();
   if (!msg) return;
+  if (msg.toLowerCase().startsWith('/reset-memory')) {
+    if (!confirm('Reset ALL memory?\n\nThis will permanently delete:\n• Conversation history\n• Daily logs\n• Vector memory (ChromaDB)\n\nThis cannot be undone.')) return;
+  }
   opsQ('opsChatMsg').value = '';
   OPS.streaming = true;
   opsQ('opsChatSend').disabled = true;

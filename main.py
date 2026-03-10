@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Corporate AI — Entry Point"""
 import asyncio
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -8,6 +9,11 @@ from pathlib import Path
 import uvicorn
 import yaml
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    handlers=[logging.StreamHandler()],
+)
 from orchestrator.event_bus import EventBus
 from orchestrator.task_queue import TaskQueue
 from orchestrator.agent_manager import AgentManager

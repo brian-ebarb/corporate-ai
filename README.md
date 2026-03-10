@@ -165,9 +165,12 @@ You can mix providers — assign a different provider per agent in `models.yaml`
 
 ### 5. Configure Agents (Optional)
 
-Edit `config/agents.yaml` to rename agents or adjust roles:
+Edit `config/agents.yaml` to rename agents, adjust roles, or set your name for the dashboard greeting:
 
 ```yaml
+user:
+  name: Your Name         # shown in the dashboard greeting
+
 supervisor:
   name: Bob Sello
   role: COO
@@ -185,6 +188,28 @@ executives:
     role: CDO
     department: research
 ```
+
+### 6. Customise Agent Prompts
+
+All agent prompts live in `config/prompts/` as plain markdown files. Edit them freely — changes take effect on the next backend restart.
+
+| File | Purpose |
+|------|---------|
+| `USER.md` | **Start here.** Describes who the user is, the business context, tech stack, preferences, and hard constraints. Injected into every agent. |
+| `COMPANY.md` | Org chart and communication rules shared by all agents. |
+| `SUPERVISOR.md` | Bob's identity, decision rules, routing logic, and response format. |
+| `EXECUTIVE.md` | Shared behavior guide for all executives (task breakdown, delegation, synthesis). |
+| `EXECUTIVE1.md` | Individual identity for the **first** executive in `agents.yaml` (CTO by default). |
+| `EXECUTIVE2.md` | Individual identity for the **second** executive (CMO by default). |
+| `EXECUTIVE3.md` | Individual identity for the **third** executive (CDO by default). |
+| `WORKER_CODER.md` | Coder worker — tools, workflow, code standards. |
+| `WORKER_QA.md` | QA worker — testing approach and reporting format. |
+| `WORKER_RESEARCH.md` | Research worker — web search tools and output standards. |
+| `WORKER_DOCS.md` | Docs worker — documentation and formatting rules. |
+
+**`USER.md` is the most impactful file to fill in.** The more context agents have about your business, tech stack, and preferences, the better their decisions and output.
+
+`EXECUTIVE{n}.md` files correspond to executives by **position** in `agents.yaml`, not by name — so renaming an executive doesn't break anything. If you add a fourth executive, create `EXECUTIVE4.md`. Files that don't exist are silently skipped.
 
 ---
 
@@ -258,7 +283,7 @@ The primary real-time view.
 
 - **Left panel — Agents**: Click any agent to see their recent activity in the centre. Click **Bob Sello** to return to the chat.
 - **Centre panel — Chat / Activity**: Chat with Bob Sello (COO). Switches to an agent event feed when you select a non-Bob agent.
-- **Right panel — Channels**: Click any channel (#executive, #engineering, etc.) to see all agent-to-agent messages on that channel in real time.
+- **Right panel — Active Now / Status / Channels**: "Active Now" shows which agent is currently running, their current step, and time elapsed — updated in real time. Click any channel (#executive, #engineering, etc.) to see all agent-to-agent messages on that channel.
 - **Bottom panel — Agent Events**: Full event log from all agents.
 
 ### Sending a Message
@@ -278,6 +303,13 @@ Type these directly in the chat input to get system information without involvin
 | Command | What it does |
 |---------|-------------|
 | `/status` | Reports the active model and provider. For Ollama: shows which models are loaded in memory, parameter size, quantization, and RAM/VRAM usage. For cloud providers (Anthropic, OpenAI, OpenRouter): shows the configured model, masked API key, and a live connectivity check against the provider's API. |
+| `/reset-memory` | **Destructive.** Clears all three memory layers: conversation history (`conversations.json`), daily logs (`memory/daily/`), and the ChromaDB vector store. Use this when agents seem confused about previously completed work, are declaring tasks done without doing anything, or when you want to start completely fresh. There is no undo — run `server_stop`, then `/reset-memory`, then restart. |
+
+> **When to use `/reset-memory`:** If an executive immediately declares a task "done" without dispatching any workers, it's almost always because the vector memory from a previous session convinced it the work was already complete. Run `/reset-memory` to clear that false context.
+
+### Timeline Tab
+
+A visual roadmap editor. Click **Edit** to enter edit mode — you can rename phases, change dates, update the status (Done / Active / Upcoming), edit descriptions, check off milestones, and add or remove both milestones and phases. Click **Save** when done. Changes persist to `localStorage` across page refreshes.
 
 ### Command Center Tab
 
@@ -371,6 +403,8 @@ Override settings without editing config files.
 | LiteLLM: model not found | Pull the model: `ollama pull <model-name>` |
 | LiteLLM: auth error | Add API key to `config/models.yaml` or set the env var |
 | Chat stuck on "Working…" | Check `logs/backend.log` — usually an LLM error. Also try **New Session** to clear stuck state. |
+| Executive declares done immediately, nothing built | Vector memory from a previous session is causing false confidence. Run `/reset-memory` in the chat input and retry the task. |
+| Executive returns "Could not determine next action" | The LLM returned malformed JSON. The system will synthesize from whatever work was completed. If nothing was done, try `/reset-memory` and resend. |
 | `/status` shows "unreachable" | Ollama isn't running, or is on a non-default port — set `OLLAMA_HOST=http://host:port` |
 | `/status` shows no models loaded | A model hasn't been used yet this session — send a message first to load it |
 | `chromadb` import error | `pip install chromadb` |

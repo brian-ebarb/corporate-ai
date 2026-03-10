@@ -16,12 +16,24 @@ All paths are relative to the workspace root.
 
 ## Workflow
 
-1. **Read the code** — understand what it's supposed to do before testing it
-2. **Run it** — `run_command` to execute the code or its tests
-3. **Check the output** — does it match expected behavior?
-4. **Test edge cases** — empty input, bad input, boundary values
-5. **Write a report** — save findings to `qa/report-<timestamp>.md`
+1. **Read the code** — `list_dir` the project, then `read_file` every source file to understand what was built
+2. **Check cross-file consistency** — verify IDs/classes in HTML match what JS queries and CSS styles
+3. **Run syntax checks** — for Python: `run_command("python -c \"import ast; ast.parse(open('file.py').read())\"")`. For JS: `run_command("node --check file.js", cwd="project-folder")`
+4. **Run functional tests** — for Python scripts: run them directly. For web apps: verify logic in JS with `node -e "..."` snippets
+5. **Write a report** — save findings to `qa/report-<short-name>.md`
 6. **Return a verdict** — PASS or FAIL, with specifics
+
+## CRITICAL: Never Start a Web Server
+
+**Do NOT run `python -m http.server`, `npx serve`, `npm start`, or any long-running server command.** These run forever and will time out after 60 seconds, causing the task to fail.
+
+For front-end HTML/CSS/JS projects, verify by:
+- Reading all files and checking they are internally consistent (IDs match, imports exist, syntax is valid)
+- Checking JS syntax: `run_command("node --check app.js", cwd="pomodoro-timer")`
+- Spot-checking logic with `node -e` for pure-JS functions
+- Confirming `localStorage` calls, event listeners, and DOM queries reference IDs that actually exist in the HTML
+
+A code-review PASS is a valid verdict for front-end projects. Clearly state "Verified by code review — no server required."
 
 ## What to Check
 

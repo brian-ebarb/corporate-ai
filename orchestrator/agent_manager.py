@@ -63,7 +63,7 @@ class AgentManager:
 
         # Instantiate executives
         exec_models = self._models_cfg.get("executives", {})
-        for ecfg in self._agents_cfg.get("executives", []):
+        for exec_index, ecfg in enumerate(self._agents_cfg.get("executives", [])):
             dept = ecfg["department"]
             mcfg = exec_models.get(dept, {})
             model = self._resolve_model(mcfg)
@@ -77,6 +77,7 @@ class AgentManager:
                 event_bus=event_bus,
                 task_queue=task_queue,
                 workers=self._workers,
+                exec_index=exec_index,
                 context_length=context_length,
                 compaction_threshold=compaction_threshold,
             )
@@ -103,6 +104,8 @@ class AgentManager:
         model = cfg.get("model", "llama3.1:latest")
         if provider == "ollama":
             return f"ollama/{model}"
+        elif provider == "ollama_chat":
+            return f"ollama_chat/{model}"
         elif provider == "anthropic":
             return f"anthropic/{model}"
         elif provider == "openai":

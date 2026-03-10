@@ -19,6 +19,7 @@ class Task:
     result: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     worker: object = field(default=None, repr=False)
+    channel: str = "tasks"          # department channel for dashboard visibility
 
 
 class TaskQueue:
@@ -44,10 +45,21 @@ class TaskQueue:
 
     async def _execute(self, task: Task):
         task.status = "running"
+        worker_label = task.worker_type or task.assigned_to
+
+        # Publish to tasks channel (task management)
         await self._bus.publish(
             "tasks", "task_started", task.assigned_to,
-            {"task_id": task.id, "title": task.title}
+            {"task_id": task.id, "title": task.title, "worker": worker_label}
         )
+        # Also publish to department channel so the dashboard shows worker activity
+        if task.channel and task.channel != "tasks":
+            await self._bus.publish(
+                task.channel, "agent_started", worker_label,
+                {"task_id": task.id, "task": task.title},
+                role="worker",
+            )
+
         try:
             if task.worker:
                 task.result = await task.worker.run(task)
@@ -57,10 +69,18 @@ class TaskQueue:
         except Exception as e:
             task.result = f"Error: {e}"
             task.status = "failed"
+
+        result_preview = (task.result or "")[:500]
         await self._bus.publish(
             "tasks", "task_completed", task.assigned_to,
-            {"task_id": task.id, "title": task.title, "status": task.status, "result": task.result[:500] if task.result else ""}
+            {"task_id": task.id, "title": task.title, "status": task.status, "result": result_preview}
         )
+        if task.channel and task.channel != "tasks":
+            await self._bus.publish(
+                task.channel, "agent_finished", worker_label,
+                {"task_id": task.id, "task": task.title, "status": task.status, "result": result_preview},
+                role="worker",
+            )
 
     def get_tasks(self) -> list[dict]:
         return [

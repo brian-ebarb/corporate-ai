@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 import yaml
@@ -57,6 +58,41 @@ def create_app(event_bus, agent_manager, task_queue, ws_broadcaster):
     async def session_reset(session_id: str = Query(default="default")):
         _supervisor_conv_store.clear_session(session_id)
         return {"ok": True, "session_id": session_id}
+
+    @app.post("/memory/reset")
+    async def memory_reset():
+        cleared = []
+        errors = []
+        root = Path(__file__).parent.parent
+
+        # 1. Short-term: clear all conversation sessions
+        try:
+            _supervisor_conv_store._sessions.clear()
+            _supervisor_conv_store._save()
+            cleared.append("conversations")
+        except Exception as e:
+            errors.append(f"conversations: {e}")
+
+        # 2. Mid-term: delete daily log files
+        daily_dir = root / "memory" / "daily"
+        try:
+            if daily_dir.exists():
+                for f in daily_dir.glob("*.md"):
+                    f.unlink()
+            cleared.append("daily logs")
+        except Exception as e:
+            errors.append(f"daily logs: {e}")
+
+        # 3. Long-term: wipe ChromaDB vector store
+        memory_dir = root / ".memory"
+        try:
+            if memory_dir.exists():
+                shutil.rmtree(memory_dir)
+            cleared.append("vector memory")
+        except Exception as e:
+            errors.append(f"vector memory: {e}")
+
+        return {"ok": not errors, "cleared": cleared, "errors": errors}
 
     @app.get("/config")
     async def get_config():

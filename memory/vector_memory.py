@@ -9,9 +9,22 @@ logger = logging.getLogger(__name__)
 
 
 class VectorMemory:
+    _instances: list["VectorMemory"] = []   # class-level registry for global reset
+
     def __init__(self, agent_id: str):
         self._agent_id = agent_id
         self._collection = None
+        VectorMemory._instances.append(self)
+
+    @classmethod
+    def reset_all(cls) -> int:
+        """Invalidate every VectorMemory collection reference in the process."""
+        count = 0
+        for inst in cls._instances:
+            if inst._collection is not None:
+                inst._collection = None
+                count += 1
+        return count
 
     def _get_collection(self):
         if self._collection is None:
