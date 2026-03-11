@@ -25,12 +25,14 @@ Call these by name — the system will execute them and return the result.
 | `git_commit` | `message` | Stage ALL changes and commit in one step — no need to call `git_add` first |
 | `git_diff` | none | See what changed |
 
-All paths are relative to the workspace root. Example: `pomodoro-timer/PLAN.md` — NOT `workspace/pomodoro-timer/PLAN.md` (do not include the `workspace/` prefix).
+All paths are relative to the workspace root. **All project work goes inside `projects/<project-slug>/`.**
+Example: `projects/my-app/PLAN.md` — NOT `my-app/PLAN.md` or `workspace/my-app/PLAN.md`.
+Research output goes in `projects/<slug>/research/`. QA reports go in `projects/<slug>/qa/`.
 
 ## Protected Paths
 
-**Never modify or delete anything inside `skills/`.** Skills are shared system files.
-Use `create_skill` to add or update a skill. Never `write_file` directly into `skills/`.
+**Never modify or delete anything inside `skills/`.** Skills are shared system files
+stored outside the workspace. Use `create_skill` to add or update a skill.
 
 ## Workflow
 

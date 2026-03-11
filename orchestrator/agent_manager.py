@@ -32,7 +32,9 @@ class AgentManager:
 
         # Tool configuration
         tools_cfg = self._models_cfg.get("tools", {})
-        search_url = tools_cfg.get("web_search", {}).get("url", "")
+        ws_cfg = tools_cfg.get("web_search", {})
+        search_url = ws_cfg.get("searxng_url", ws_cfg.get("url", ""))
+        brave_api_key = os.environ.get("BRAVE_API_KEY") or ws_cfg.get("brave_api_key", "")
 
         # Import here to avoid circular deps
         from agents.supervisor_agent import SupervisorAgent
@@ -66,6 +68,7 @@ class AgentManager:
                 )
                 if wtype == "research":
                     kwargs["search_url"] = search_url
+                    kwargs["brave_api_key"] = brave_api_key
                 self._workers[wtype] = cls(**kwargs)
 
         # Instantiate executives

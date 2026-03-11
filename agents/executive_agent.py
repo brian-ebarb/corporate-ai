@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 MAX_STEPS = 12   # max atomic worker dispatches per task
 
-_SKILLS_DIR = Path(__file__).parent.parent / "workspace" / "skills"
+_SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
 
 def _load_skills_summary() -> str:
@@ -172,6 +172,19 @@ You are {self.name}, {self.role}. You are orchestrating workers to complete a ta
 **Workers are small local models.** They execute precise instructions but cannot reason or plan.
 You are the brain. Workers are your hands.{skills_section}
 
+## Project Folder Structure
+
+**All project files must live inside `projects/<project-slug>/` in the workspace.**
+Never create files at the workspace root. Use a short kebab-case slug for the project folder.
+
+Examples:
+- Code: `projects/my-saas/src/index.ts`
+- Plan: `projects/my-saas/PLAN.md`
+- Research: `projects/my-saas/research/market.md`
+- QA reports: `projects/my-saas/qa/report.md`
+
+When instructing workers, always include the full path from workspace root.
+
 ## How to Direct Workers
 
 - **docs**: Tell it the EXACT path and EXACT content to write. Write the file content yourself — the worker just saves it.
@@ -217,15 +230,19 @@ dispatch workers and produce real deliverables in THIS session. Never declare do
 
 ## Capturing Skills
 
-After completing a multi-step task successfully, you may optionally dispatch one final docs step
-to save the workflow as a reusable skill. Do this when:
-- The task required a non-obvious sequence of steps that worked well
-- You discovered the best way to use a combination of tools for this type of work
-- This kind of task will likely recur
+After completing any multi-step task successfully, evaluate whether to save the workflow as a
+reusable skill. **Default to yes** — skills compound over time and make every future similar task
+faster and more consistent. Save a skill when:
+- The task involved more than two steps in a non-obvious sequence
+- You figured out the right order, tools, or format for a type of work
+- This kind of task (build a plan, write a GTM doc, QA a web app) will clearly recur
 
-To save a skill, dispatch: worker=docs, task="Call create_skill(name='<kebab-name>', content='<full skill markdown>'). The skill should document the workflow, trigger conditions, step sequence, and any lessons learned."
+To save a skill, dispatch a final docs step:
+"Call create_skill(name='<kebab-name>', content='...') with the full skill markdown.
+The skill must include: when to trigger it, the exact step sequence with worker types,
+file path conventions, any gotchas or lessons learned, and example outputs."
 
-Only do this if the pattern is genuinely reusable — not for one-off tasks.
+Skills are the team's institutional memory. A plan that worked well IS a skill.
 
 ## Response Format
 
@@ -238,6 +255,28 @@ To declare the task complete (only when workers in THIS session have confirmed d
 {{"done": true, "summary": "<executive summary: what was built, file paths, outcomes>"}}
 
 Maximum {MAX_STEPS} steps. Declare done before that limit."""
+
+    def _build_reflection_prompt(self) -> str:
+        return f"""{self._context}
+
+---
+
+You are {self.name}, {self.role}. A worker just completed a step. Assess the result briefly.
+
+Answer these three questions in plain text — under 150 words total:
+
+1. **Success?** Did the worker actually complete the task? Look for concrete signals:
+   "Written:", "Committed", a file path, command output = success.
+   Prose description, no tool calls, or an error message = failure or partial.
+
+2. **What was produced?** List exact file paths, key outputs, or data returned.
+   If nothing concrete was produced, say so plainly.
+
+3. **Impact on plan?** Does this change what comes next? Did the result reveal something
+   unexpected — missing dependencies, a simpler path, an error that needs fixing first?
+   If the plan is unchanged, say "Plan unchanged — proceed as expected."
+
+Be direct. This is internal reasoning, not a user-facing response."""
 
     def _build_synthesis_prompt(self) -> str:
         return f"""{self._context}
@@ -270,6 +309,40 @@ Include file paths, key outputs, and any issues encountered."""
             logger.error(f"[Executive:{self.name}] Think error: {e}")
             return ""
 
+    async def _reflect(self, task: str, last_step: dict, step_history: list[dict]) -> str:
+        """Reasoning pass after each worker result — assess outcome before deciding next step."""
+        prior = ""
+        if len(step_history) > 1:
+            prior = "\n\nPrior steps:\n" + "\n".join(
+                f"- Step {s['step']} [{s['worker']}] {s['title']}: {s['result'][:200]}"
+                for s in step_history[:-1]
+            )
+        user_content = (
+            f"Task: {task}\n\n"
+            f"Step just completed:\n"
+            f"Worker: {last_step['worker']}\n"
+            f"Title: {last_step['title']}\n"
+            f"Result:\n{last_step['result']}"
+            + prior
+        )
+        messages = [
+            {"role": "system", "content": self._build_reflection_prompt()},
+            {"role": "user", "content": user_content},
+        ]
+        try:
+            resp = await asyncio.to_thread(
+                litellm.completion,
+                model=self.model,
+                messages=messages,
+                temperature=0.3,
+            )
+            reflection = resp.choices[0].message.content.strip()
+            logger.info(f"[Executive:{self.name}] Reflection (step {last_step['step']}): {reflection[:120]}")
+            return reflection
+        except Exception as e:
+            logger.error(f"[Executive:{self.name}] Reflect error: {e}")
+            return ""
+
     async def _next_action(self, task: str, thinking: str, step_history: list[dict]) -> dict:
         """
         Executive decides the next atomic worker action based on current state.
@@ -283,6 +356,8 @@ Include file paths, key outputs, and any issues encountered."""
             for s in step_history:
                 history_text += f"\n**Step {s['step']} — {s['worker']}: {s['title']}**\n"
                 history_text += f"Result: {s['result']}\n"
+                if s.get("reflection"):
+                    history_text += f"Reflection: {s['reflection']}\n"
 
         user_content = (
             f"Task:\n{task}"
@@ -461,12 +536,23 @@ Include file paths, key outputs, and any issues encountered."""
             result = await self._run_worker_task(title, atomic_task, worker_type)
 
             # Keep results capped so the executive's context doesn't explode
-            step_history.append({
+            step_entry = {
                 "step": step_num + 1,
                 "worker": worker_type,
                 "title": title,
                 "result": result[:800] if result else "(no result)",
-            })
+            }
+            step_history.append(step_entry)
+
+            # ── Reflection pass: assess outcome before deciding next step ──
+            reflection = await self._reflect(task, step_entry, step_history)
+            if reflection:
+                step_entry["reflection"] = reflection
+                await self._bus.publish(
+                    self.department, "agent_thinking", self.name,
+                    {"thinking": f"Reflection on step {step_num + 1}: {reflection[:300]}"},
+                    role=self.role,
+                )
 
         # ── If we exhausted steps without a done signal, synthesize ───────
         if not summary:

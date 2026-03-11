@@ -3,9 +3,11 @@ from pathlib import Path
 
 WORKSPACE = Path(__file__).parent.parent / "workspace"
 
-# Directories that workers must never write to or delete from directly.
-# Use the dedicated tools instead (e.g. SkillTool for skills/).
-_PROTECTED_DIRS = {"skills"}
+# Directories inside the workspace that workers must never write to or delete from directly.
+# Note: the skills library has been moved outside the workspace entirely (to project root /skills/)
+# so it is no longer reachable via FilesystemTool at all. This list covers any other
+# workspace-internal paths that should be off-limits to raw file operations.
+_PROTECTED_DIRS: set[str] = set()  # extend if needed
 
 
 class FilesystemTool:
@@ -40,6 +42,33 @@ class FilesystemTool:
             pass
         return None
 
+    def _check_project_structure(self, p: Path, original: str) -> str | None:
+        """
+        Reject writes to new top-level directories that should be under projects/.
+        Allowed top-level writes: projects/, and any pre-existing top-level dir.
+        A new top-level dir that doesn't exist yet is almost certainly a mistake
+        (worker dropped the 'projects/' prefix from the path).
+        """
+        try:
+            rel = p.relative_to(WORKSPACE.resolve())
+        except ValueError:
+            return None
+        if len(rel.parts) < 2:
+            return None  # writing directly to workspace root file — allow
+        top = rel.parts[0]
+        if top == "projects":
+            return None  # correct path
+        top_dir = WORKSPACE.resolve() / top
+        if top_dir.exists():
+            return None  # pre-existing top-level dir — allow reads/writes
+        # New top-level directory that isn't 'projects/' — likely a missing prefix
+        corrected = f"projects/{original.lstrip('/')}"
+        return (
+            f"ERROR: All project files must go inside projects/<slug>/. "
+            f"'{original}' would create a new top-level directory '{top}/'. "
+            f"Did you mean '{corrected}'? Retry with the correct path."
+        )
+
     def read_file(self, path: str) -> str:
         p = self._safe_path(path)
         if not p.exists():
@@ -49,6 +78,9 @@ class FilesystemTool:
     def write_file(self, path: str, content: str) -> str:
         p = self._safe_path(path)
         err = self._check_protected(p)
+        if err:
+            return err
+        err = self._check_project_structure(p, path)
         if err:
             return err
         p.parent.mkdir(parents=True, exist_ok=True)

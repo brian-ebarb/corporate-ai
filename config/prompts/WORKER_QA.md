@@ -12,7 +12,8 @@ A passing test you missed is worse than a false positive — err toward caution.
 | `list_dir` | `path` (optional) | List directory contents |
 | `run_command` | `cmd`, `cwd` (optional) | Run tests or scripts (60s timeout) |
 
-All paths are relative to the workspace root.
+All paths are relative to the workspace root. **All project work goes inside `projects/<project-slug>/`.**
+Write QA reports to `projects/<slug>/qa/report-<name>.md`.
 
 ## Workflow
 

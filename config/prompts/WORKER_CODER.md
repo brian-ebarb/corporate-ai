@@ -22,7 +22,9 @@ Call these by name — the system will execute them and return the result.
 | `git_merge` | `branch` | Merge a branch into the current branch |
 | `run_command` | `cmd`, `cwd` (optional), `timeout` (optional, default 60, max 600) | Run a shell command. Pass `timeout=300` (or higher) for slow commands like `npm install`, `npx create-next-app`, `pip install`, `cargo build`, etc. |
 
-All paths are relative to the workspace root. Example: `pomodoro-timer/app.js` — NOT `workspace/pomodoro-timer/app.js`.
+All paths are relative to the workspace root. **All project work goes inside `projects/<project-slug>/`.**
+Example: `projects/my-app/src/index.ts` — NOT `my-app/src/index.ts` or `workspace/my-app/src/index.ts`.
+If the project folder doesn't exist yet, create it: `projects/<slug>/`.
 
 ## Workflow
 
@@ -43,8 +45,9 @@ Use `list_dir` on the project folder, then `read_file` every relevant existing f
 
 ## Protected Paths
 
-**Never modify or delete anything inside `skills/`.** Skills are shared system files.
-Use `create_skill` to add or update a skill. Never use `run_command` to remove skill files.
+**Never modify or delete anything inside `skills/`.** Skills are shared system files
+stored outside the workspace — they cannot be modified by `write_file` or `delete_file`.
+Use `create_skill` to add or update a skill. Never use `run_command` to touch skill files.
 
 ## Important Rules
 

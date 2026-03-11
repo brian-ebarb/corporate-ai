@@ -63,10 +63,11 @@ corporate-ai/
 ├── relay/               ← Node.js relay server
 │   ├── server.js
 │   └── package.json
+├── skills/              ← Shared skills library — source-controlled with this repo (see Skills System below)
 ├── tools/               ← Filesystem, shell, git, web, skill tools for workers
 ├── workers/             ← Worker agents (coder, QA, research, docs)
 ├── workspace/           ← Sandboxed agent file workspace (git-initialised)
-│   └── skills/          ← Shared skills library (see Skills System below)
+│   └── projects/        ← All agent project work lives here, one subfolder per project
 ├── main.py              ← FastAPI backend entry point
 ├── requirements.txt
 ├── server_start.bat     ← Start all services (Windows)
@@ -340,31 +341,37 @@ Bob can sequence work across all three executives. For example, a request like *
 
 Each executive receives the outputs of all prior steps automatically — no manual handoff needed.
 
+### Executive reflection
+
+After each worker returns a result, the executive runs a short reflection pass before deciding the next step. It assesses: did the worker actually succeed? what was produced? does this change the plan? Reflections are visible in the activity feed and are fed back into the executive's planning context, allowing it to adapt mid-task rather than blindly following a pre-set plan.
+
 ---
 
 ## Skills System
 
-Skills are reusable workflow templates stored as markdown files in `workspace/skills/`. They teach agents *how* to do a specific type of work — the right format, methodology, step sequence, or output structure for a recurring task.
+Skills are reusable workflow templates stored as markdown files in `skills/` at the project root. They teach agents *how* to do a specific type of work — the right format, methodology, step sequence, or output structure for a recurring task.
+
+Skills are **source-controlled with the main `corporate-ai` repo** — they are completely separate from the agent workspace (`workspace/`), so no workspace git operation (branch switching, reset, clean) can ever touch them.
 
 ### How skills work
 
 1. **Executives see the skills list** during planning. When a relevant skill exists for a step (e.g. `web-design-pro` for a frontend task), the executive names it in the worker's instructions.
 2. **Workers load the skill** by calling `read_skill(name)` when their instructions tell them to, then follow its workflow.
-3. **New skills can be created** by workers calling `create_skill(name, content)` after completing a task with a reusable pattern, or by delegating explicitly: *"Save this workflow as a skill."*
+3. **New skills are created automatically** — executives default to saving successful multi-step workflows as skills via `create_skill(name, content)`. You can also request one explicitly: *"Save this workflow as a skill."*
 
 ### Adding skills
 
-Create `workspace/skills/` if it doesn't exist, then drop any `.md` file in:
+Drop any `.md` file in `skills/` at the project root:
 
 ```
-workspace/
+corporate-ai/
 └── skills/
     ├── web-design-pro.md
     ├── go-to-market.md
     └── your-custom-skill.md
 ```
 
-Skills are picked up automatically on the next request — no restart needed.
+Skills are picked up automatically on the next request — no restart needed. Commit them to keep them with the project.
 
 **Recommended frontmatter** so the executive can read the description at a glance:
 
@@ -379,11 +386,21 @@ description: One sentence describing when to use this skill and what it does.
 ...workflow content...
 ```
 
-### Skill protection
+### Included skills
 
-`workspace/skills/` is a **protected directory**. Workers cannot modify or delete skill files using raw file operations (`write_file`, `delete_file`). All skill writes must go through `create_skill(name, content)`, which is the correct path. This prevents agents from accidentally wiping your skills library while reorganising the workspace.
+| Skill | Description |
+|-------|-------------|
+| `kanban-planning` | Break complex projects into atomic, sequenced worker tasks |
+| `web-design-pro` | Modern web design and frontend engineering standards |
+| `anti-slop-design` | Distinctive, non-generic UI design principles |
+| `go-to-market` | GTM strategy framework for launches |
+| `game-design` | Game design structure and mechanics framework |
+| `game-marketing` | Telegram Mini App and game marketing strategy |
+| `skill-detector` | Pattern-monitors for new reusable workflows worth saving |
 
-To add to the protected list, edit `_PROTECTED_DIRS` in `tools/filesystem_tool.py`.
+### Skill safety
+
+Skills live in `corporate-ai/skills/`, completely outside the agent workspace git repo. Workers access skills only through `read_skill(name)` and `create_skill(name, content)` — they cannot reach the skills directory via raw file operations. There is nothing to configure.
 
 ---
 
@@ -448,11 +465,9 @@ corporate-ai/workspace/
 
 This directory is git-initialised. Agents can read, write, and commit files here using their built-in tools. Inspect it any time to see what the agents have produced.
 
-**Protected subdirectories** (cannot be modified by raw file operations):
+All project files produced by agents are written under `workspace/projects/<slug>/` — one subfolder per project. Workers never write to the workspace root directly.
 
-| Directory | Purpose | Correct tool |
-|-----------|---------|--------------|
-| `skills/` | Shared skills library | `create_skill(name, content)` |
+Skills are not stored in the workspace at all — see [Skills System](#skills-system) below.
 
 ---
 
@@ -512,8 +527,8 @@ Override settings without editing config files.
 | Bob doesn't respond before working | Make sure the backend is current — Bob now sends an acknowledgment via websocket before starting work. |
 | Executive declares done immediately, nothing built | Vector memory from a previous session is causing false confidence. Run `/reset-memory` in the chat input and retry the task. |
 | Executive returns "Could not determine next action" | The LLM returned malformed JSON. The system will synthesize from whatever work was completed. If nothing was done, try `/reset-memory` and resend. |
-| Skills not being used | Check that `workspace/skills/` exists and contains `.md` files with a `description:` frontmatter field. No restart needed — skills are loaded on each request. |
-| Worker deleted my skill files | Update to the latest version — `workspace/skills/` is now a protected directory. |
+| Skills not being used | Check that `skills/` at the project root contains `.md` files with a `description:` frontmatter field. No restart needed — skills are loaded on each request. |
+| Worker deleted my skill files | Skills now live in `corporate-ai/skills/` (project root), completely outside the workspace git repo — workers cannot reach or delete them. Make sure you're on the latest version. |
 | `run_command` times out on `npm install` or similar | Pass `timeout=300` (or higher) in the worker instruction. Max is 600s. |
 | `/status` shows "unreachable" | Ollama isn't running, or is on a non-default port — set `OLLAMA_HOST=http://host:port` |
 | `/status` shows no models loaded | A model hasn't been used yet this session — send a message first to load it |

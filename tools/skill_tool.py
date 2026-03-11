@@ -4,7 +4,9 @@ from datetime import datetime
 from pathlib import Path
 
 WORKSPACE  = Path(__file__).parent.parent / "workspace"
-SKILLS_DIR = WORKSPACE / "skills"
+# Skills live at the project root — OUTSIDE the workspace git repo so that
+# branch switching or git clean operations can never wipe them.
+SKILLS_DIR    = Path(__file__).parent.parent / "skills"
 REQUESTS_FILE = WORKSPACE / "tool-requests.md"
 
 logger = logging.getLogger(__name__)

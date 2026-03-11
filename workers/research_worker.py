@@ -8,9 +8,9 @@ class ResearchWorker(WorkerBase):
     prompt_name = "WORKER_RESEARCH"
 
     def __init__(self, model: str, event_bus=None, context_length: int = 8192,
-                 compaction_threshold: float = 0.80, search_url: str = ""):
+                 compaction_threshold: float = 0.80, search_url: str = "", brave_api_key: str = ""):
         super().__init__(model, event_bus, context_length, compaction_threshold)
-        ws = WebSearchTool(url=search_url)
+        ws = WebSearchTool(brave_api_key=brave_api_key, searxng_url=search_url)
         fs = FilesystemTool()
         sk = SkillTool(event_bus=event_bus)
         self.tools = [ws, fs, sk]

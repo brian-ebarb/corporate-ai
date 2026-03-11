@@ -1,6 +1,6 @@
 supervisor:
   provider: ollama
-  model: kimi-k2.5:cloud
+  model: qwen3.5:cloud
   context_length: 256000      # max tokens for this model's context window
   compaction_threshold: 0.5 # compact conversation history at 75% full
 
@@ -57,5 +57,5 @@ api_keys:
 
 tools:
   web_search:
-    engine: searxng
-    url: "http://192.168.0.4:8090/"
+    brave_api_key: ""   # set BRAVE_API_KEY env var instead — never commit real keys here
+    searxng_url: "http://192.168.0.4:8090/"   # fallback when Brave is unavailable or fails
