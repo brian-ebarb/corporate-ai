@@ -1,28 +1,52 @@
+import os
 import requests
+
+# Default URL — overridden by models.yaml tools.web_search.url or SEARXNG_URL env var
+_DEFAULT_URL = os.environ.get("SEARXNG_URL", "http://192.168.0.4:8090/")
 
 
 class WebSearchTool:
     schemas = [
-        {"type": "function", "function": {"name": "search", "description": "Search the web for information", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query"}}, "required": ["query"]}}},
+        {
+            "type": "function",
+            "function": {
+                "name": "search",
+                "description": "Search the web using SearXNG. Returns titles, URLs, and content snippets.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "Search query"},
+                        "num_results": {"type": "integer", "description": "Number of results to return (default 5, max 10)"},
+                    },
+                    "required": ["query"],
+                },
+            },
+        },
     ]
 
-    def search(self, query: str) -> str:
+    def __init__(self, url: str = ""):
+        self._base = (url or _DEFAULT_URL).rstrip("/")
+
+    def search(self, query: str, num_results: int = 5) -> str:
+        num_results = min(max(1, num_results), 10)
         try:
             resp = requests.get(
-                "https://api.duckduckgo.com/",
-                params={"q": query, "format": "json", "no_html": "1", "skip_disambig": "1"},
-                timeout=10,
+                f"{self._base}/search",
+                params={"q": query, "format": "json", "language": "en"},
+                timeout=15,
                 headers={"User-Agent": "CorporateAI/1.0"},
             )
+            resp.raise_for_status()
             data = resp.json()
-            abstract = data.get("AbstractText", "")
-            related = data.get("RelatedTopics", [])[:3]
-            results = []
-            if abstract:
-                results.append(f"Summary: {abstract}")
-            for r in related:
-                if isinstance(r, dict) and r.get("Text"):
-                    results.append(f"- {r['Text'][:200]}")
-            return "\n".join(results) if results else f"No results found for: {query}"
+            results = data.get("results", [])[:num_results]
+            if not results:
+                return f"No results found for: {query}"
+            lines = []
+            for i, r in enumerate(results, 1):
+                title   = r.get("title", "(no title)")
+                url     = r.get("url", "")
+                content = (r.get("content") or "")[:400].strip()
+                lines.append(f"[{i}] {title}\n    {url}\n    {content}")
+            return "\n\n".join(lines)
         except Exception as e:
-            return f"Search error: {e}"
+            return f"Search error ({self._base}): {e}"

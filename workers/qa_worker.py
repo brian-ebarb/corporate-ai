@@ -1,6 +1,7 @@
 from workers.worker_base import WorkerBase
 from tools.filesystem_tool import FilesystemTool
 from tools.shell_tool import ShellTool
+from tools.skill_tool import SkillTool
 
 
 class QAWorker(WorkerBase):
@@ -10,5 +11,6 @@ class QAWorker(WorkerBase):
         super().__init__(model, event_bus, context_length, compaction_threshold)
         fs = FilesystemTool()
         sh = ShellTool()
-        self.tools = [fs, sh]
-        self.tool_schemas = fs.schemas + sh.schemas
+        sk = SkillTool(event_bus=event_bus)
+        self.tools = [fs, sh, sk]
+        self.tool_schemas = fs.schemas + sh.schemas + sk.schemas

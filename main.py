@@ -73,9 +73,17 @@ async def main():
     WORKSPACE.mkdir(parents=True, exist_ok=True)
     ensure_workspace_git()
 
+    # Read concurrency config before constructing the queue
+    models_cfg = {}
+    models_yaml = CONFIG_DIR / "models.yaml"
+    if models_yaml.exists():
+        with open(models_yaml) as f:
+            models_cfg = yaml.safe_load(f) or {}
+    max_workers = int(models_cfg.get("concurrency", {}).get("max_workers", 1))
+
     # Core components
     event_bus     = EventBus()
-    task_queue    = TaskQueue(event_bus)
+    task_queue    = TaskQueue(event_bus, max_workers=max_workers)
     agent_manager = AgentManager(config_path=str(CONFIG_DIR))
     agent_manager.load(event_bus, task_queue)
     ws_broadcaster = WSBroadcaster(event_bus)
@@ -106,6 +114,7 @@ async def main():
                              "heartbeat_interval": hb_cfg.get("interval_seconds", 60)})
 
     print(f"[start] Corporate AI — {len(agent_list)} agents loaded")
+    print(f"[start] Worker concurrency — max_workers={max_workers}")
     if hb_cfg.get("enabled"):
         print(f"[start] Heartbeat — {hb_cfg.get('interval_seconds', 60)}s  mode={hb_cfg.get('mode', 'event')}")
     port = int(os.environ.get("PORT", "8000"))

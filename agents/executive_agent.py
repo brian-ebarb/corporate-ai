@@ -2,6 +2,7 @@ import json
 import re
 import asyncio
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 try:
@@ -20,6 +21,43 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MAX_STEPS = 12   # max atomic worker dispatches per task
+
+_SKILLS_DIR = Path(__file__).parent.parent / "workspace" / "skills"
+
+
+def _load_skills_summary() -> str:
+    """
+    Read workspace/skills/ and return a short summary for injection into prompts.
+    Fast synchronous read — skills are small markdown files.
+    """
+    try:
+        if not _SKILLS_DIR.exists():
+            return ""
+        skills = sorted(_SKILLS_DIR.glob("*.md"))
+        if not skills:
+            return ""
+        lines = ["## Available Skills (workspace/skills/)"]
+        for s in skills:
+            try:
+                text = s.read_text(encoding="utf-8", errors="replace")
+                desc = ""
+                if text.startswith("---"):
+                    end = text.find("---", 3)
+                    if end > 0:
+                        for line in text[3:end].splitlines():
+                            if line.strip().startswith("description:"):
+                                desc = line.split(":", 1)[1].strip().lstrip(">").strip()
+                                break
+                lines.append(f"- **{s.stem}**: {desc}" if desc else f"- **{s.stem}**")
+            except Exception:
+                lines.append(f"- **{s.stem}**")
+        lines.append(
+            "\nWorkers can read any skill with `read_skill(name)` before starting a task, "
+            "or create new ones with `create_skill(name, content)`."
+        )
+        return "\n".join(lines)
+    except Exception:
+        return ""
 
 
 def _extract_json(raw: str) -> dict | None:
@@ -119,6 +157,8 @@ Do NOT produce a step list yet. Just think."""
 
     def _build_action_prompt(self) -> str:
         worker_types = list(self._workers.keys())
+        skills_block = _load_skills_summary()
+        skills_section = f"\n\n{skills_block}" if skills_block else ""
         return f"""{self._context}
 
 ---
@@ -130,7 +170,7 @@ You are {self.name}, {self.role}. You are orchestrating workers to complete a ta
 {', '.join(worker_types)}
 
 **Workers are small local models.** They execute precise instructions but cannot reason or plan.
-You are the brain. Workers are your hands.
+You are the brain. Workers are your hands.{skills_section}
 
 ## How to Direct Workers
 
@@ -140,6 +180,15 @@ You are the brain. Workers are your hands.
 - **qa**: Tell it EXACTLY which files to read and what to verify. For verification, use syntax checks and code review — not long-running servers (60s timeout). A code-review PASS is a valid result.
 
 Each step does ONE thing: one file write, one search, one command.
+
+## Using Skills in Worker Instructions
+
+If a relevant skill exists in the skills list above, name it explicitly in your task instructions.
+Workers will call `read_skill(name)` themselves at the start of the task to load the full content.
+
+For example: if a `web-design-pro` skill exists and you are building a web UI, include in your
+task: "Load and follow the `web-design-pro` skill." The worker will fetch and apply it.
+Always name specific skills by their exact slug (e.g. `anti-slop-design`, not "the design skill").
 
 ## Understanding the Project Before Dispatching
 
@@ -165,6 +214,18 @@ Research returning text summaries is useful context, but it does not mean the ta
 **CRITICAL — Past memory is context only, NOT proof of completion.**
 If your memory or past context mentions similar work, that is a previous session. You must still
 dispatch workers and produce real deliverables in THIS session. Never declare done at step 0.
+
+## Capturing Skills
+
+After completing a multi-step task successfully, you may optionally dispatch one final docs step
+to save the workflow as a reusable skill. Do this when:
+- The task required a non-obvious sequence of steps that worked well
+- You discovered the best way to use a combination of tools for this type of work
+- This kind of task will likely recur
+
+To save a skill, dispatch: worker=docs, task="Call create_skill(name='<kebab-name>', content='<full skill markdown>'). The skill should document the workflow, trigger conditions, step sequence, and any lessons learned."
+
+Only do this if the pattern is genuinely reusable — not for one-off tasks.
 
 ## Response Format
 

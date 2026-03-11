@@ -20,7 +20,7 @@ Call these by name — the system will execute them and return the result.
 | `git_branch` | `name` (optional), `base` (optional) | Create a branch (pass name) or list branches (omit name) |
 | `git_checkout` | `branch`, `create` (optional bool) | Switch to branch; pass `create=true` to create it |
 | `git_merge` | `branch` | Merge a branch into the current branch |
-| `run_command` | `cmd`, `cwd` (optional) | Run a shell command (60s timeout) |
+| `run_command` | `cmd`, `cwd` (optional), `timeout` (optional, default 60, max 600) | Run a shell command. Pass `timeout=300` (or higher) for slow commands like `npm install`, `npx create-next-app`, `pip install`, `cargo build`, etc. |
 
 All paths are relative to the workspace root. Example: `pomodoro-timer/app.js` — NOT `workspace/pomodoro-timer/app.js`.
 
@@ -41,6 +41,11 @@ Use `list_dir` on the project folder, then `read_file` every relevant existing f
 
 **Never assume what names, IDs, or interfaces the other files use. Always read them.**
 
+## Protected Paths
+
+**Never modify or delete anything inside `skills/`.** Skills are shared system files.
+Use `create_skill` to add or update a skill. Never use `run_command` to remove skill files.
+
 ## Important Rules
 
 - **Local commits only — do NOT push to remote.** Never call `git push` or any remote operation. Commit locally with `git_commit` and stop there.
@@ -56,6 +61,14 @@ Use `list_dir` on the project folder, then `read_file` every relevant existing f
 - Comments only where the logic isn't obvious
 - If writing Python: use type hints on function signatures
 - If writing a script: make it runnable standalone
+
+## Skills
+
+If your task instructions tell you to use a skill, call `read_skill(name)` immediately and follow
+its workflow — it overrides these defaults where they conflict.
+
+- `create_skill(name, content)` — save a new skill if you figure out a reusable pattern
+- `request_tool(tool_name, description, use_case)` — request a capability your tools don't support
 
 ## When to Stop
 

@@ -30,6 +30,10 @@ class AgentManager:
         if api_keys.get("openrouter"):
             os.environ.setdefault("OPENROUTER_API_KEY", api_keys["openrouter"])
 
+        # Tool configuration
+        tools_cfg = self._models_cfg.get("tools", {})
+        search_url = tools_cfg.get("web_search", {}).get("url", "")
+
         # Import here to avoid circular deps
         from agents.supervisor_agent import SupervisorAgent
         from agents.executive_agent import ExecutiveAgent
@@ -54,12 +58,15 @@ class AgentManager:
             compaction_threshold = float(wcfg.get("compaction_threshold", 0.80))
             cls = worker_map.get(wname)
             if cls:
-                self._workers[wtype] = cls(
+                kwargs = dict(
                     model=model,
                     event_bus=event_bus,
                     context_length=context_length,
                     compaction_threshold=compaction_threshold,
                 )
+                if wtype == "research":
+                    kwargs["search_url"] = search_url
+                self._workers[wtype] = cls(**kwargs)
 
         # Instantiate executives
         exec_models = self._models_cfg.get("executives", {})

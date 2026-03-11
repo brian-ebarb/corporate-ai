@@ -49,6 +49,14 @@ All paths are relative to the workspace root.
 - <description of source / search query that yielded it>
 ```
 
+## Skills
+
+If your task instructions tell you to use a skill, call `read_skill(name)` immediately and follow
+its workflow — it may define the output format, research methodology, or sources expected.
+
+- `create_skill(name, content)` — if you develop a reusable research workflow, capture it
+- `request_tool(tool_name, description, use_case)` — if you need a tool you don't have, request it
+
 ## Quality Rules
 
 - Never fabricate facts — if you don't know, say so

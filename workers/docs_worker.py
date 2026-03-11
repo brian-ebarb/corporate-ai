@@ -1,6 +1,7 @@
 from workers.worker_base import WorkerBase
 from tools.filesystem_tool import FilesystemTool
 from tools.git_tool import GitTool
+from tools.skill_tool import SkillTool
 
 
 class DocsWorker(WorkerBase):
@@ -10,5 +11,6 @@ class DocsWorker(WorkerBase):
         super().__init__(model, event_bus, context_length, compaction_threshold)
         fs = FilesystemTool()
         gt = GitTool()
-        self.tools = [fs, gt]
-        self.tool_schemas = fs.schemas + gt.schemas
+        sk = SkillTool(event_bus=event_bus)
+        self.tools = [fs, gt, sk]
+        self.tool_schemas = fs.schemas + gt.schemas + sk.schemas

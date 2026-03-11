@@ -2,6 +2,7 @@ from workers.worker_base import WorkerBase
 from tools.filesystem_tool import FilesystemTool
 from tools.git_tool import GitTool
 from tools.shell_tool import ShellTool
+from tools.skill_tool import SkillTool
 
 
 class CoderWorker(WorkerBase):
@@ -12,5 +13,6 @@ class CoderWorker(WorkerBase):
         fs = FilesystemTool()
         gt = GitTool()
         sh = ShellTool()
-        self.tools = [fs, gt, sh]
-        self.tool_schemas = fs.schemas + gt.schemas + sh.schemas
+        sk = SkillTool(event_bus=event_bus)
+        self.tools = [fs, gt, sh, sk]
+        self.tool_schemas = fs.schemas + gt.schemas + sh.schemas + sk.schemas

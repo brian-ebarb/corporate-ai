@@ -50,7 +50,7 @@ corporate-ai/
 ├── api/                 ← FastAPI routes
 ├── config/
 │   ├── agents.yaml      ← Agent names, roles, heartbeat config
-│   ├── models.yaml      ← LLM provider & model per agent
+│   ├── models.yaml      ← LLM provider, model, and concurrency config
 │   └── prompts/         ← Editable markdown prompt files per agent
 ├── dashboard/           ← Frontend SPA
 │   └── index.html
@@ -63,9 +63,10 @@ corporate-ai/
 ├── relay/               ← Node.js relay server
 │   ├── server.js
 │   └── package.json
-├── tools/               ← Filesystem, shell, git, web tools for workers
+├── tools/               ← Filesystem, shell, git, web, skill tools for workers
 ├── workers/             ← Worker agents (coder, QA, research, docs)
 ├── workspace/           ← Sandboxed agent file workspace (git-initialised)
+│   └── skills/          ← Shared skills library (see Skills System below)
 ├── main.py              ← FastAPI backend entry point
 ├── requirements.txt
 ├── server_start.bat     ← Start all services (Windows)
@@ -197,7 +198,7 @@ All agent prompts live in `config/prompts/` as plain markdown files. Edit them f
 |------|---------|
 | `USER.md` | **Start here.** Describes who the user is, the business context, tech stack, preferences, and hard constraints. Injected into every agent. |
 | `COMPANY.md` | Org chart and communication rules shared by all agents. |
-| `SUPERVISOR.md` | Bob's identity, decision rules, routing logic, and response format. |
+| `SUPERVISOR.md` | Bob's identity, decision rules, multi-step planning, and response format. |
 | `EXECUTIVE.md` | Shared behavior guide for all executives (task breakdown, delegation, synthesis). |
 | `EXECUTIVE1.md` | Individual identity for the **first** executive in `agents.yaml` (CTO by default). |
 | `EXECUTIVE2.md` | Individual identity for the **second** executive (CMO by default). |
@@ -288,7 +289,7 @@ The primary real-time view.
 
 ### Sending a Message
 
-Type in the chat input and press **Enter** or click **Send**. Bob routes the request to the appropriate executive and workers. The full delegation chain is visible in the event log.
+Type in the chat input and press **Enter** or click **Send**. Bob thinks through the request, sends you an acknowledgment of his plan, then coordinates his executives. The full delegation chain is visible in the event log.
 
 ### New Session
 
@@ -317,6 +318,90 @@ Browse the full AI agent roster. Click any agent card to view info and recent ac
 
 ---
 
+## Bob Sello — COO Behavior
+
+Bob is the user's right hand and the brain of the operation. He does not simply route messages — he thinks, plans, and coordinates across the full team.
+
+### How Bob works
+
+Every non-trivial request goes through three stages:
+
+1. **Think** — Bob reasons through what's really being asked: what success looks like, which executives are needed, in what order, and what depends on what.
+2. **Plan** — Bob produces an ordered sequence of executive steps. Simple tasks go to one executive. Complex tasks (e.g. "build a SaaS and a go-to-market strategy") are broken into phases across multiple executives, with outputs from earlier steps fed into later ones.
+3. **Acknowledge, then execute** — Bob tells you his plan *before* disappearing to work, so you know what's happening. Then he executes the steps in order and reports back with a complete project summary.
+
+### Multi-executive workflows
+
+Bob can sequence work across all three executives. For example, a request like *"build a SaaS product and plan the launch"* would produce:
+
+- **Step 1 — Rita (Research):** Market research, competitive landscape, target customers
+- **Step 2 — Paul (Engineering):** Build the app, informed by Rita's research
+- **Step 3 — Michael (Marketing):** Go-to-market strategy and launch plan, using both Rita's research and Paul's product output
+
+Each executive receives the outputs of all prior steps automatically — no manual handoff needed.
+
+---
+
+## Skills System
+
+Skills are reusable workflow templates stored as markdown files in `workspace/skills/`. They teach agents *how* to do a specific type of work — the right format, methodology, step sequence, or output structure for a recurring task.
+
+### How skills work
+
+1. **Executives see the skills list** during planning. When a relevant skill exists for a step (e.g. `web-design-pro` for a frontend task), the executive names it in the worker's instructions.
+2. **Workers load the skill** by calling `read_skill(name)` when their instructions tell them to, then follow its workflow.
+3. **New skills can be created** by workers calling `create_skill(name, content)` after completing a task with a reusable pattern, or by delegating explicitly: *"Save this workflow as a skill."*
+
+### Adding skills
+
+Create `workspace/skills/` if it doesn't exist, then drop any `.md` file in:
+
+```
+workspace/
+└── skills/
+    ├── web-design-pro.md
+    ├── go-to-market.md
+    └── your-custom-skill.md
+```
+
+Skills are picked up automatically on the next request — no restart needed.
+
+**Recommended frontmatter** so the executive can read the description at a glance:
+
+```markdown
+---
+name: your-skill-name
+description: One sentence describing when to use this skill and what it does.
+---
+
+# Your Skill Name
+
+...workflow content...
+```
+
+### Skill protection
+
+`workspace/skills/` is a **protected directory**. Workers cannot modify or delete skill files using raw file operations (`write_file`, `delete_file`). All skill writes must go through `create_skill(name, content)`, which is the correct path. This prevents agents from accidentally wiping your skills library while reorganising the workspace.
+
+To add to the protected list, edit `_PROTECTED_DIRS` in `tools/filesystem_tool.py`.
+
+---
+
+## Worker Concurrency
+
+By default, only one worker runs at a time — tasks queue up and execute serially. This is safe for limited hardware (one GPU, one Ollama instance).
+
+If your machine can handle parallel inference, increase the limit in `config/models.yaml`:
+
+```yaml
+concurrency:
+  max_workers: 2   # workers that can run simultaneously
+```
+
+With `max_workers: 2`, two worker tasks can run at the same time. Executives naturally wait for their own workers to finish before planning the next step — the queue handles fairness automatically.
+
+---
+
 ## Memory & Context Management
 
 The supervisor uses a three-layer memory model:
@@ -324,7 +409,7 @@ The supervisor uses a three-layer memory model:
 | Layer | Storage | What it holds | Survives |
 |-------|---------|---------------|----------|
 | Short-term | `memory/conversations.json` | Active session message turns (what the LLM sees right now) | Restarts |
-| **Mid-term** | `memory/daily/YYYY-MM-DD-supervisor.md` | Full day's activity log — every request, decision, and outcome | Compaction, restarts, new sessions |
+| Mid-term | `memory/daily/YYYY-MM-DD-supervisor.md` | Full day's activity log — every request, decision, and outcome | Compaction, restarts, new sessions |
 | Long-term | `memory/` (ChromaDB) | Semantic vector store for all-time recall by similarity | Everything |
 
 **How they work together:**
@@ -339,14 +424,14 @@ The daily log files are plain markdown — you can read, edit, or delete them di
 **Context window and compaction** are configurable per agent in `config/models.yaml`:
 
 ```yaml
-context:
-  supervisor:
+supervisor:
+  context_length: 256000
+  compaction_threshold: 0.5   # compact when 50% full
+
+executives:
+  engineering:
     context_length: 256000
-    compaction_threshold: 0.5   # compact when 50% full
-  executives:
-    engineering:
-      context_length: 256000
-      compaction_threshold: 0.5
+    compaction_threshold: 0.5
 ```
 
 When a context window approaches its threshold, older messages are summarised automatically and replaced with a compact summary, preserving the most recent turns verbatim. The daily log is unaffected by compaction.
@@ -362,6 +447,27 @@ corporate-ai/workspace/
 ```
 
 This directory is git-initialised. Agents can read, write, and commit files here using their built-in tools. Inspect it any time to see what the agents have produced.
+
+**Protected subdirectories** (cannot be modified by raw file operations):
+
+| Directory | Purpose | Correct tool |
+|-----------|---------|--------------|
+| `skills/` | Shared skills library | `create_skill(name, content)` |
+
+---
+
+## Tools Reference
+
+Workers have access to the following built-in tools:
+
+| Tool | Workers | Description |
+|------|---------|-------------|
+| `read_file`, `write_file`, `list_dir`, `delete_file` | All | Workspace filesystem operations |
+| `run_command` | Coder | Run shell commands. Accepts optional `timeout` (default 60s, max 600s) — increase for slow commands like `npm install`, `pip install`, `cargo build`, scaffolding tools, etc. |
+| `git_status`, `git_add`, `git_commit`, `git_diff`, `git_log`, `git_branch`, `git_checkout`, `git_merge` | Coder | Git operations in the workspace |
+| `search` | Research | Web search via configured engine |
+| `list_skills`, `read_skill`, `create_skill` | All | Skills library management |
+| `request_tool` | All | Log a request for a new tool capability |
 
 ---
 
@@ -403,8 +509,12 @@ Override settings without editing config files.
 | LiteLLM: model not found | Pull the model: `ollama pull <model-name>` |
 | LiteLLM: auth error | Add API key to `config/models.yaml` or set the env var |
 | Chat stuck on "Working…" | Check `logs/backend.log` — usually an LLM error. Also try **New Session** to clear stuck state. |
+| Bob doesn't respond before working | Make sure the backend is current — Bob now sends an acknowledgment via websocket before starting work. |
 | Executive declares done immediately, nothing built | Vector memory from a previous session is causing false confidence. Run `/reset-memory` in the chat input and retry the task. |
 | Executive returns "Could not determine next action" | The LLM returned malformed JSON. The system will synthesize from whatever work was completed. If nothing was done, try `/reset-memory` and resend. |
+| Skills not being used | Check that `workspace/skills/` exists and contains `.md` files with a `description:` frontmatter field. No restart needed — skills are loaded on each request. |
+| Worker deleted my skill files | Update to the latest version — `workspace/skills/` is now a protected directory. |
+| `run_command` times out on `npm install` or similar | Pass `timeout=300` (or higher) in the worker instruction. Max is 600s. |
 | `/status` shows "unreachable" | Ollama isn't running, or is on a non-default port — set `OLLAMA_HOST=http://host:port` |
 | `/status` shows no models loaded | A model hasn't been used yet this session — send a message first to load it |
 | `chromadb` import error | `pip install chromadb` |

@@ -317,25 +317,229 @@ class SupervisorAgent:
             reply = f"All memory cleared: {', '.join(cleared)}.\nConversation history, daily logs, and vector memory have been wiped. Starting fresh."
         return reply
 
-    # ── System prompt ──────────────────────────────────────────────────────
+    # ── Prompts ────────────────────────────────────────────────────────────
 
-    def _build_system_prompt(self) -> str:
-        exec_list = "\n".join(
-            f"- {e.name} ({e.role}, department: {e.department})"
+    def _exec_roster(self) -> str:
+        return "\n".join(
+            f"- {e.name} ({e.role}, department key: `{e.department}`)"
             for e in self._executives
         )
-        dept_options = ", ".join(e.department for e in self._executives)
+
+    def _dept_keys(self) -> str:
+        return ", ".join(e.department for e in self._executives)
+
+    def _build_thinking_prompt(self) -> str:
+        from agents.executive_agent import _load_skills_summary
+        skills_block = _load_skills_summary()
+        skills_section = f"\n\n{skills_block}" if skills_block else ""
         return f"""{self._context}
 
 ---
 
-## Active Executives
-{exec_list}
+You are {self.name}, {self.role}. Before you act, think through the request carefully.
 
-Available department keys: {dept_options}
+## Your Executives
+{self._exec_roster()}{skills_section}
 
-Remember: respond to delegation decisions with ONLY the JSON object specified above.
-No markdown, no explanation, just the JSON."""
+## What to reason about
+
+1. What is the user actually asking for? What does complete success look like?
+2. Is this simple (one executive can handle it) or complex (multiple executives in sequence)?
+3. Which executives are needed? In what order? What does each one need to do?
+4. Are there dependencies between steps? (e.g. research must finish before building starts, \
+or Rita's market data feeds into both Paul's architecture and Michael's GTM)
+5. What context needs to flow from one step to the next? Name the files or outputs explicitly.
+6. Are any skills relevant? Name them — executives will tell workers to load them.
+7. What should I tell the user right now so they feel informed before I disappear to work?
+
+Think out loud. Be direct and specific. Under 500 words."""
+
+    def _build_planning_prompt(self) -> str:
+        return f"""{self._context}
+
+---
+
+You are {self.name}, {self.role}. You have thought through the request. Now produce your action plan.
+
+## Your Executives
+{self._exec_roster()}
+
+Available department keys: {self._dept_keys()}
+
+## Response Format
+
+**For tasks requiring work — single or multi-step:**
+{{
+  "acknowledgment": "Message sent to the user RIGHT NOW before any work starts. Confirm you understand the goal, outline your plan clearly, name who is doing what, set honest expectations about scope. This is the user's only visibility until you report back — make it count.",
+  "steps": [
+    {{"executive": "<dept key>", "title": "<short step name>", "task": "<complete self-contained instructions for this executive. Include file paths where prior steps will deposit results so this executive knows where to look.>"}},
+    ...
+  ]
+}}
+
+**For direct replies (greetings, status questions, things you can answer yourself):**
+{{"reply": "..."}}
+
+## Planning rules
+
+- Steps execute **in order**. An executive only starts after the previous one finishes.
+- If step 2 depends on step 1's output, say so explicitly in step 2's task: \
+"Research results will be at `research/<topic>.md` — read it before proceeding."
+- Each step's task must be fully self-contained — the executive only sees their own instructions.
+- Name relevant skills in task instructions so the executive tells workers to load them.
+- acknowledgment goes to the user immediately — be direct, professional, specific.
+- For complex multi-step plans, tell the user how many phases there are and roughly what each covers.
+- Respond with ONLY the JSON object. No markdown fences, no explanation outside the JSON."""
+
+    def _build_synthesis_prompt(self, steps: list[dict]) -> str:
+        step_summary = "\n".join(
+            f"- Step {i+1} ({s['executive']}): {s['title']}"
+            for i, s in enumerate(steps)
+        )
+        return f"""{self._context}
+
+---
+
+You are {self.name}, {self.role}. Your executives have completed all assigned work.
+
+Steps that were executed:
+{step_summary}
+
+Write the final report to the user as PLAIN TEXT — no JSON, no markdown code fences.
+- Lead with what was accomplished overall
+- Cover each major deliverable: what was built/researched/planned, file paths, key outcomes
+- Flag anything that failed or needs follow-up
+- Close with next steps or what the user can do now
+Be thorough but concise. This is the user's complete project report."""
+
+    # ── LLM helpers ────────────────────────────────────────────────────────
+
+    async def _think(self, message: str, history: list, daily_log: str, recalled: list) -> str:
+        """Reasoning pass — Bob thinks before planning."""
+        context_blocks = ""
+        if daily_log:
+            context_blocks += f"\n\n## Today's activity log:\n{daily_log}"
+        if recalled:
+            context_blocks += "\n\n## Relevant past context:\n" + "\n---\n".join(recalled)
+
+        messages = [
+            {"role": "system", "content": self._build_thinking_prompt() + context_blocks},
+            *history[-6:],
+            {"role": "user", "content": message},
+        ]
+        try:
+            resp = await asyncio.to_thread(
+                litellm.completion,
+                model=self.model,
+                messages=messages,
+                temperature=0.5,
+            )
+            self._record_usage(resp, "thinking")
+            thinking = resp.choices[0].message.content.strip()
+            logger.info(f"[Supervisor] Thinking complete ({len(thinking)} chars)")
+            return thinking
+        except Exception as e:
+            logger.error(f"[Supervisor] Think error: {e}")
+            return ""
+
+    async def _plan(self, message: str, thinking: str, history: list,
+                    daily_log: str, recalled: list) -> dict:
+        """Planning pass — produces acknowledgment + ordered steps (or direct reply)."""
+        context_blocks = ""
+        if daily_log:
+            context_blocks += f"\n\n## Today's activity log:\n{daily_log}"
+        if recalled:
+            context_blocks += "\n\n## Relevant past context:\n" + "\n---\n".join(recalled)
+
+        messages = [
+            {"role": "system", "content": self._build_planning_prompt() + context_blocks},
+            *history,
+            {"role": "user", "content": message},
+        ]
+        if thinking:
+            messages.append({"role": "assistant", "content": f"<thinking>\n{thinking}\n</thinking>"})
+            messages.append({"role": "user", "content": "Now output your action plan as JSON."})
+
+        if self._ctx_mgr.needs_compaction(messages):
+            messages = await self._ctx_mgr.compact(messages)
+
+        try:
+            resp = await asyncio.to_thread(
+                litellm.completion,
+                model=self.model,
+                messages=messages,
+                temperature=0.3,
+            )
+            self._record_usage(resp, "planning")
+            raw = resp.choices[0].message.content.strip()
+            # Strip think tags that some models emit even when not asked
+            import re as _re
+            raw = _re.sub(r"<think>.*?</think>", "", raw, flags=_re.DOTALL).strip()
+            start = raw.find("{")
+            end   = raw.rfind("}") + 1
+            if start >= 0 and end > start:
+                plan = json.loads(raw[start:end])
+                logger.info(
+                    f"[Supervisor] Plan: "
+                    f"{'direct reply' if 'reply' in plan else str(len(plan.get('steps', []))) + ' step(s)'}"
+                )
+                return plan
+        except Exception as e:
+            logger.error(f"[Supervisor] Planning error: {e}")
+
+        # Fallback: route to first executive
+        return {
+            "acknowledgment": "On it — I'll get the team working on this now.",
+            "steps": [{
+                "executive": self._executives[0].department if self._executives else "",
+                "title": "Handle request",
+                "task": message,
+            }],
+        }
+
+    async def _synthesize(self, message: str, history: list,
+                          steps: list[dict], all_results: list[dict]) -> str:
+        """Final synthesis — Bob reports back to the user across all steps."""
+        results_block = "\n\n".join(
+            f"### Step {i+1}: {r['title']} ({r['executive']})\n{r['result']}"
+            for i, r in enumerate(all_results)
+        )
+        messages = [
+            {"role": "system", "content": self._build_synthesis_prompt(steps)},
+            *history,
+            {"role": "user", "content": message},
+            {"role": "assistant", "content": f"[All executive reports]\n\n{results_block}"},
+            {"role": "user", "content": "Write your final report to the user now."},
+        ]
+        if self._ctx_mgr.needs_compaction(messages):
+            messages = await self._ctx_mgr.compact(messages)
+        try:
+            resp = await asyncio.to_thread(
+                litellm.completion,
+                model=self.model,
+                messages=messages,
+                temperature=0.5,
+            )
+            self._record_usage(resp, "synthesis")
+            text = resp.choices[0].message.content.strip()
+            # Strip JSON if model ignored plain-text instruction
+            if text.startswith("{"):
+                try:
+                    parsed = json.loads(text[text.find("{"):text.rfind("}")+1])
+                    if "reply" in parsed:
+                        text = parsed["reply"]
+                except Exception:
+                    pass
+            return text
+        except Exception as e:
+            logger.error(f"[Supervisor] Synthesis error: {e}")
+            return results_block or "Work completed."
+
+    def _find_executive(self, dept: str):
+        for e in self._executives:
+            if e.department == dept:
+                return e
+        return self._executives[0] if self._executives else None
 
     # ── Main entry point ───────────────────────────────────────────────────
 
@@ -343,81 +547,32 @@ No markdown, no explanation, just the JSON."""
         await self._bus.publish("executive", "agent_started", self.name,
                                 {"message": message[:200]}, role=self.role)
 
-        # ── Slash commands: handled directly, no LLM involved ─────────────
+        # ── Slash commands ────────────────────────────────────────────────
         slash_result = await self._handle_slash_command(message, session_id)
         if slash_result is not None:
             return slash_result
 
-        system_prompt = self._build_system_prompt()
+        # ── Load all memory ───────────────────────────────────────────────
+        history    = _conv_store.get_messages(session_id)
+        daily_log  = await asyncio.to_thread(self._daily_mem.read_recent, 24, 6000)
+        recalled   = await self._vector_mem.recall(message, n_results=3)
 
-        # ── Short-term memory: load conversation history ──────────────────
-        history = _conv_store.get_messages(session_id)
+        # ── Thinking pass ─────────────────────────────────────────────────
+        thinking = await self._think(message, history, daily_log, recalled)
+        if thinking:
+            await self._bus.publish("executive", "agent_thinking", self.name,
+                                    {"thinking": thinking[:600]}, role=self.role)
 
-        # ── Mid-term memory: today's activity log ─────────────────────────
-        daily_log = await asyncio.to_thread(self._daily_mem.read_recent, 24, 6000)
-        daily_block = ""
-        if daily_log:
-            daily_block = "\n\n## Today's Activity Log:\n" + daily_log
+        # ── Planning pass ─────────────────────────────────────────────────
+        plan = await self._plan(message, thinking, history, daily_log, recalled)
 
-        # ── Long-term memory: recall relevant past context ────────────────
-        recalled = await self._vector_mem.recall(message, n_results=3)
-        ltm_block = ""
-        if recalled:
-            ltm_block = "\n\n## Relevant past context:\n" + "\n---\n".join(recalled)
-
-        # Build full message list for routing LLM call
-        routing_messages = (
-            [{"role": "system", "content": system_prompt + daily_block + ltm_block}]
-            + history
-            + [{"role": "user", "content": message}]
-        )
-
-        # ── Context compaction ────────────────────────────────────────────
-        if self._ctx_mgr.needs_compaction(routing_messages):
-            to_compact = routing_messages[:-1]
-            compacted = await self._ctx_mgr.compact(to_compact)
-            routing_messages = compacted + [{"role": "user", "content": message}]
-            new_hist = [m for m in routing_messages[1:-1]
-                        if m.get("role") != "system" or
-                        m.get("content", "").startswith("## Conversation summary")]
-            _conv_store.replace_messages(session_id, new_hist)
-            history = _conv_store.get_messages(session_id)
-
-        # ── Routing LLM call ──────────────────────────────────────────────
-        try:
-            resp = await asyncio.to_thread(
-                litellm.completion,
-                model=self.model,
-                messages=routing_messages,
-                temperature=0.3,
-            )
-            self._record_usage(resp, "routing")
-            raw = resp.choices[0].message.content.strip()
-            start = raw.find("{")
-            end = raw.rfind("}") + 1
-            if start >= 0 and end > start:
-                decision = json.loads(raw[start:end])
-            else:
-                decision = {
-                    "executive": self._executives[0].department if self._executives else "engineering",
-                    "reason": "fallback - could not parse JSON",
-                    "delegated_task": message,
-                }
-        except Exception as e:
-            logger.error(f"[Supervisor] Routing LLM error: {e}")
-            decision = {
-                "executive": self._executives[0].department if self._executives else "engineering",
-                "reason": f"error: {e}",
-                "delegated_task": message,
-            }
-
-        # ── Direct reply — no delegation ──────────────────────────────────
-        if "reply" in decision:
-            reply_text = decision["reply"]
+        # ── Direct reply ──────────────────────────────────────────────────
+        if "reply" in plan:
+            reply_text = plan["reply"]
             _conv_store.append(session_id, "user", message)
             _conv_store.append(session_id, "assistant", reply_text)
             await self._vector_mem.store(
-                f"User: {message}\nBob: {reply_text}",
+                f"User: {message}\n{self.name}: {reply_text}",
                 {"session": session_id, "type": "direct_reply"},
             )
             await asyncio.to_thread(self._daily_mem.log, message, "Direct reply", reply_text)
@@ -427,109 +582,88 @@ No markdown, no explanation, just the JSON."""
                                     {"result": reply_text[:400]}, role="supervisor")
             return reply_text
 
-        # ── Route to chosen executive ─────────────────────────────────────
-        chosen = None
-        for exec_agent in self._executives:
-            if exec_agent.department == decision.get("executive"):
-                chosen = exec_agent
-                break
-        if not chosen and self._executives:
-            chosen = self._executives[0]
+        # ── Acknowledge the user immediately before any work starts ───────
+        acknowledgment = plan.get("acknowledgment", "On it.")
+        steps          = plan.get("steps", [])
 
+        # Publish as message_posted so it appears in chat right away,
+        # before the long wait while executives run.
         await self._bus.publish("executive", "message_posted", self.name,
-                                {"to": chosen.name if chosen else "unknown",
-                                 "reason": decision.get("reason", ""),
-                                 "task": decision.get("delegated_task", message)},
-                                role=self.role)
+                                {"message": acknowledgment}, role="supervisor")
+        logger.info(f"[Supervisor] Acknowledged user. Executing {len(steps)} step(s).")
 
-        exec_result = ""
-        if chosen:
-            delegated = decision.get("delegated_task") or message
-            # Safety net: if Bob summarised the task, re-attach the full original message
-            # so the executive always has complete requirements.
-            if len(message) > len(delegated) + 50:
-                delegated = delegated + f"\n\n---\n\n**Full original request (use this for complete requirements):**\n{message}"
+        # ── Execute steps sequentially ────────────────────────────────────
+        all_results: list[dict] = []
+        prior_context = ""
 
-            # Write delegation state BEFORE awaiting — so heartbeats fired during
-            # execution can see that work is in progress.
+        for i, step in enumerate(steps):
+            dept    = step.get("executive", "")
+            title   = step.get("title", f"Step {i+1}")
+            task    = step.get("task", message)
+            chosen  = self._find_executive(dept)
+
+            if not chosen:
+                logger.warning(f"[Supervisor] No executive for dept '{dept}', skipping step '{title}'")
+                all_results.append({"executive": dept, "title": title,
+                                    "result": f"(skipped — no executive for '{dept}')"})
+                continue
+
+            # Inject prior steps' outputs so each executive has full context
+            if prior_context:
+                task = task + f"\n\n---\n\n## Outputs from prior steps\n{prior_context}"
+
+            # Safety net: always include the full original user message
+            if len(message) > len(step.get("task", "")) + 50:
+                task = task + (
+                    f"\n\n---\n\n## Full original user request\n{message}"
+                )
+
+            # Log delegation state so heartbeats see it
             delegation_note = (
-                f"TASK IN PROGRESS — delegated to {chosen.name} ({chosen.role}, {chosen.department}).\n"
-                f"User request: {message[:300]}\n"
-                f"Status: waiting for executive to complete. Do NOT report 'no tasks in progress'."
+                f"TASK IN PROGRESS — step {i+1}/{len(steps)}: '{title}' "
+                f"delegated to {chosen.name} ({chosen.department}).\n"
+                f"User request: {message[:200]}"
             )
             await asyncio.to_thread(
-                self._daily_mem.log,
-                message,
-                f"Delegating to {chosen.name} ({chosen.department}) — AWAITING RESULT",
+                self._daily_mem.log, message,
+                f"Step {i+1}/{len(steps)}: {chosen.name} ({chosen.department}) — AWAITING",
                 delegation_note,
             )
             await self._vector_mem.store(
                 delegation_note,
                 {"session": session_id, "type": "delegation_in_progress",
-                 "department": chosen.department},
+                 "step": i+1, "department": chosen.department},
             )
 
-            exec_result = await chosen.handle(delegated)
+            await self._bus.publish("executive", "message_posted", self.name,
+                                    {"to": chosen.name, "step": f"{i+1}/{len(steps)}",
+                                     "title": title}, role=self.role)
 
-        # ── Synthesis — final response to user ────────────────────────────
-        synth_system = (
-            f"{self._context}\n\n"
-            f"You have just received a completed executive report. "
-            f"Write the final response to the user as PLAIN TEXT — no JSON, no braces, no markdown code fences. "
-            f"Be direct, professional, and concise. Lead with the result.\n"
-            f"Executive who handled it: "
-            f"{chosen.name if chosen else 'unknown'} "
-            f"({chosen.role if chosen else ''})"
-        )
+            logger.info(f"[Supervisor] Step {i+1}/{len(steps)}: [{chosen.department}] {title}")
+            result = await chosen.handle(task)
 
-        synth_messages = [
-            {"role": "system", "content": synth_system},
-            *history,
-            {"role": "user", "content": message},
-            {"role": "assistant", "content": f"[Executive report received]\n{exec_result}"},
-            {"role": "user", "content": "Now write your final response to the user based on this report."},
-        ]
+            all_results.append({"executive": dept, "title": title, "result": result})
+            prior_context += f"\n\n### {title} ({chosen.name})\n{result[:1000]}"
 
-        if self._ctx_mgr.needs_compaction(synth_messages):
-            synth_messages = await self._ctx_mgr.compact(synth_messages)
+        # ── Synthesis ─────────────────────────────────────────────────────
+        # Reload history (may have changed during long execution)
+        history = _conv_store.get_messages(session_id)
+        final_text = await self._synthesize(message, history, steps, all_results)
 
-        try:
-            final_resp = await asyncio.to_thread(
-                litellm.completion,
-                model=self.model,
-                messages=synth_messages,
-                temperature=0.5,
-            )
-            self._record_usage(final_resp, "synthesis")
-            final_text = final_resp.choices[0].message.content.strip()
-            # Strip JSON wrapper if model returned {"reply": "..."} despite plain-text instruction
-            if final_text.startswith("{"):
-                try:
-                    start = final_text.find("{")
-                    end   = final_text.rfind("}") + 1
-                    parsed = json.loads(final_text[start:end])
-                    if "reply" in parsed:
-                        final_text = parsed["reply"]
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.error(f"[Supervisor] Synthesis LLM error: {e}")
-            final_text = exec_result or f"Task completed. (synthesis error: {e})"
-
-        # ── Persist to all three memory layers ────────────────────────────
+        # ── Persist ───────────────────────────────────────────────────────
         _conv_store.append(session_id, "user", message)
         _conv_store.append(session_id, "assistant", final_text)
 
-        dept = chosen.department if chosen else "unknown"
+        depts = ", ".join(r["executive"] for r in all_results)
         await self._vector_mem.store(
-            f"User: {message}\nExecutive ({dept}): "
-            f"{exec_result[:500]}\nBob: {final_text}",
-            {"session": session_id, "type": "delegated", "department": dept},
+            f"User: {message}\nSteps ({depts}): "
+            + " | ".join(f"{r['title']}: {r['result'][:200]}" for r in all_results)
+            + f"\n{self.name}: {final_text}",
+            {"session": session_id, "type": "delegated", "departments": depts},
         )
         await asyncio.to_thread(
-            self._daily_mem.log,
-            message,
-            f"Delegated to {chosen.name if chosen else 'unknown'} ({dept})",
+            self._daily_mem.log, message,
+            f"Completed {len(steps)} step(s) via {depts}",
             final_text,
         )
 

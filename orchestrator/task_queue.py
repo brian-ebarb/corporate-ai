@@ -23,25 +23,45 @@ class Task:
 
 
 class TaskQueue:
-    def __init__(self, event_bus: "EventBus"):
+    def __init__(self, event_bus: "EventBus", max_workers: int = 1):
         self._bus = event_bus
         self._queue: asyncio.Queue = asyncio.Queue()
         self._history: list[Task] = []
+        self._max_workers: int = max(1, int(max_workers))
+        self._active: int = 0
+
+    @property
+    def active_count(self) -> int:
+        return self._active
+
+    @property
+    def max_workers(self) -> int:
+        return self._max_workers
 
     async def enqueue(self, task: Task) -> str:
         await self._queue.put(task)
         self._history.append(task)
         await self._bus.publish(
             "tasks", "task_created", task.assigned_to,
-            {"task_id": task.id, "title": task.title, "worker_type": task.worker_type}
+            {"task_id": task.id, "title": task.title, "worker_type": task.worker_type,
+             "queue_depth": self._queue.qsize(), "active": self._active, "max_workers": self._max_workers}
         )
         return task.id
 
     async def start_worker_loop(self):
+        """Spawn max_workers consumers — each pulls tasks from the shared queue independently."""
+        consumers = [asyncio.create_task(self._consume()) for _ in range(self._max_workers)]
+        await asyncio.gather(*consumers)
+
+    async def _consume(self):
         while True:
             task = await self._queue.get()
-            await self._execute(task)
-            self._queue.task_done()
+            self._active += 1
+            try:
+                await self._execute(task)
+            finally:
+                self._active -= 1
+                self._queue.task_done()
 
     async def _execute(self, task: Task):
         task.status = "running"

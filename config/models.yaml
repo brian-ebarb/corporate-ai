@@ -43,8 +43,19 @@ workers:
     context_length: 32000
     compaction_threshold: 0.80
 
+concurrency:
+  # Maximum number of workers that can run simultaneously.
+  # Set to 1 (default) if running on limited hardware — tasks will queue and
+  # run one at a time. Increase if your machine can handle parallel inference.
+  max_workers: 1
+
 api_keys:
   anthropic: ""
   openai: ""
   openrouter: ""
   ollama_base_url: "http://localhost:11434"
+
+tools:
+  web_search:
+    engine: searxng
+    url: "http://192.168.0.4:8090/"

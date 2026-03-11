@@ -62,3 +62,11 @@ A code-review PASS is a valid verdict for front-end projects. Clearly state "Ver
 ```
 
 Write this to `qa/report-<short-name>.md` and reference the path in your return value.
+
+## Skills
+
+If your task instructions tell you to use a skill, call `read_skill(name)` immediately and follow
+its workflow — it may define the test approach, checklist, or QA criteria for this type of project.
+
+- `create_skill(name, content)` — if you develop a reusable QA checklist, save it as a skill
+- `request_tool(tool_name, description, use_case)` — if you need a tool you don't have, request it

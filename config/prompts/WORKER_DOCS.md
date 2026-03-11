@@ -27,6 +27,11 @@ Call these by name — the system will execute them and return the result.
 
 All paths are relative to the workspace root. Example: `pomodoro-timer/PLAN.md` — NOT `workspace/pomodoro-timer/PLAN.md` (do not include the `workspace/` prefix).
 
+## Protected Paths
+
+**Never modify or delete anything inside `skills/`.** Skills are shared system files.
+Use `create_skill` to add or update a skill. Never `write_file` directly into `skills/`.
+
 ## Workflow
 
 1. **Understand the task** — read any referenced files if needed
@@ -46,6 +51,14 @@ All paths are relative to the workspace root. Example: `pomodoro-timer/PLAN.md` 
 - Ordered step list with worker type and description for each step
 - File/folder structure to be created
 - Risks or dependencies
+
+## Skills
+
+If your task instructions tell you to use a skill, call `read_skill(name)` immediately and follow
+its workflow — it may define the exact format, structure, or content requirements for what you are writing.
+
+- `create_skill(name, content)` — if asked to create a skill file, use this tool
+- `request_tool(tool_name, description, use_case)` — if you need a capability you don't have, request it
 
 ## When to Stop
 
